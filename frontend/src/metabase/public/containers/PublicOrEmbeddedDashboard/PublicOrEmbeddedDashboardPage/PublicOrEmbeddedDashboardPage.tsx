@@ -8,7 +8,6 @@ import { useDashboardUrlQuery } from "metabase/dashboard/hooks/use-dashboard-url
 import { useDispatch, useSelector } from "metabase/lib/redux";
 import { LocaleProvider } from "metabase/public/LocaleProvider";
 import { setErrorPage } from "metabase/redux/app";
-import { getCanWhitelabel } from "metabase/selectors/whitelabel";
 import { Mode } from "metabase/visualizations/click-actions/Mode";
 import { PublicMode } from "metabase/visualizations/click-actions/modes/PublicMode";
 
@@ -48,7 +47,7 @@ export const PublicOrEmbeddedDashboardPage = (props: WithRouterProps) => {
     locale,
   } = useDashboardUrlParams({ location, onRefresh: refreshDashboard });
 
-  const canWhitelabel = useSelector(getCanWhitelabel);
+  const canWhitelabel = useSelector(() => true);
 
   return (
     <LocaleProvider
