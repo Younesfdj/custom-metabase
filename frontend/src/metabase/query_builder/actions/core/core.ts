@@ -13,6 +13,7 @@ import * as Urls from "metabase/lib/urls";
 import { copy } from "metabase/lib/utils";
 import { loadMetadataForCard } from "metabase/questions/actions";
 import { openUrl } from "metabase/redux/app";
+import { getMetadata } from "metabase/selectors/metadata";
 import { getCardAfterVisualizationClick } from "metabase/visualizations/lib/utils";
 import * as Lib from "metabase-lib";
 import Question from "metabase-lib/v1/Question";
@@ -35,16 +36,17 @@ import { trackNewQuestionSaved } from "../../analytics";
 import {
   getCard,
   getIsResultDirty,
+  getIsShowingRawTable,
   getOriginalQuestion,
   getParameters,
   getQuestion,
   getSubmittableQuestion,
   isBasedOnExistingQuestion,
 } from "../../selectors";
-import { updateUrl } from "../navigation";
-import { zoomInRow } from "../object-detail";
 import { clearQueryResult, runQuestionQuery } from "../querying";
 import { onCloseSidebars } from "../ui";
+import { updateUrl } from "../url";
+import { zoomInRow } from "../zoom";
 
 import { loadCard } from "./card";
 import { API_UPDATE_QUESTION, SOFT_RELOAD_CARD } from "./types";
@@ -151,22 +153,40 @@ export const navigateToNewCardInsideQB = createThunkAction(
           ),
         );
       } else {
-        const card = getCardAfterVisualizationClick(nextCard, previousCard);
-        const url = Urls.serializedQuestion(card);
+        // when navigating in the "raw" table mode, preserve the original viz settings
+        const isRawTable = getIsShowingRawTable(getState());
+        const currentCard = getCard(getState());
+        const adjustedNextCard =
+          isRawTable && currentCard != null
+            ? {
+                ...nextCard,
+                display: currentCard.display,
+                visualization_settings: currentCard.visualization_settings,
+              }
+            : nextCard;
+        const cardAfterClick = getCardAfterVisualizationClick(
+          adjustedNextCard,
+          previousCard,
+        );
+        const url = Urls.serializedQuestion(cardAfterClick);
         if (shouldOpenInBlankWindow(url, { blankOnMetaOrCtrlKey: true })) {
           dispatch(openUrl(url));
         } else {
           dispatch(onCloseSidebars());
-          if (!cardQueryIsEquivalent(previousCard, nextCard)) {
+          if (!cardQueryIsEquivalent(previousCard, adjustedNextCard)) {
             // clear the query result so we don't try to display the new visualization before running the new query
             dispatch(clearQueryResult());
           }
           // When the dataset query changes, we should change the type,
           // to start building a new ad-hoc question based on a dataset
-          dispatch(setCardAndRun({ ...card, type: "question" }));
+          dispatch(setCardAndRun({ ...cardAfterClick, type: "question" }));
         }
+
         if (objectId !== undefined) {
-          dispatch(zoomInRow({ objectId }));
+          // TODO: this should happen after we navigated to a new card, but in reality we open details view before navigation, which adds one more item in browser history
+          setTimeout(() => {
+            dispatch(zoomInRow({ objectId }));
+          });
         }
       }
     };
@@ -217,18 +237,24 @@ export const apiCreateQuestion = (
 
     // Saving a card, locks in the current display as though it had been
     // selected in the UI.
-    const card = createdQuestion.lockDisplay().card();
-    dispatch({ type: API_CREATE_QUESTION, payload: card });
+    const createdCard = createdQuestion.lockDisplay().card();
+    dispatch({ type: API_CREATE_QUESTION, payload: createdCard });
 
-    await dispatch(loadMetadataForCard(card));
+    await dispatch(loadMetadataForCard(createdCard));
+    const createdQuestionWithMetadata = new Question(
+      createdCard,
+      getMetadata(getState()),
+    );
 
     const isModel = question.type() === "model";
     const isMetric = question.type() === "metric";
     if (isModel || isMetric) {
-      dispatch(runQuestionQuery());
+      const composedQuestion =
+        createdQuestionWithMetadata.composeQuestionAdhoc();
+      dispatch(runQuestionQuery({ overrideWithQuestion: composedQuestion }));
     }
 
-    return createdQuestion;
+    return createdQuestionWithMetadata;
   };
 };
 

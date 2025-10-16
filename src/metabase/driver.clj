@@ -401,6 +401,14 @@
   dispatch-on-uninitialized-driver
   :hierarchy #'hierarchy)
 
+(defmulti extra-info
+  "extra driver info"
+  {:added "0.56.0" :arglists '([driver])}
+  dispatch-on-uninitialized-driver
+  :hierarchy #'hierarchy)
+
+(defmethod extra-info ::driver [_] nil)
+
 (defmulti execute-reducible-query
   "Execute a native query against that database and return rows that can be reduced using `transduce`/`reduce`.
 
@@ -600,6 +608,9 @@
     ;; implement [[execute-write-query!]]
     :actions/custom
 
+    ;; Does the driver support editing data within database tables.
+    :actions/data-editing
+
     ;; Does changing the JVM timezone allow producing correct results? (See #27876 for details.)
     :test/jvm-timezone-setting
 
@@ -688,6 +699,9 @@
     ;; Does this driver support casting text to floats? (`float()` custom expression function)
     :expressions/float
 
+    ;; Does this driver support returning the current date? (`today()` custom expression function)
+    :expressions/today
+
     ;; Does this driver support "temporal-unit" template tags in native queries?
     :native-temporal-units
 
@@ -705,7 +719,16 @@
     :test/cannot-destroy-db
 
     ;; There are drivers that support uuids in queries, but not in create table as eg. Athena.
-    :test/uuids-in-create-table-statements})
+    :test/uuids-in-create-table-statements
+
+    ;; Does this driver support Metabase's database routing feature?
+    :database-routing
+
+    ;; Does this driver support replication?
+    :database-replication
+
+    ;; Does this driver support creating a java.sql.Statement via a Connection?
+    :jdbc/statements})
 
 (defmulti database-supports?
   "Does this driver and specific instance of a database support a certain `feature`?
@@ -1334,3 +1357,14 @@
   :hierarchy #'hierarchy)
 
 (defmethod table-known-to-not-exist? ::driver [_ _] false)
+
+(defmulti do-with-resilient-connection
+  "Execute function `f` within a context that may recover (on-demand) from connection failures.
+  `f` must be eager."
+  {:added "0.55.9" :arglists '([driver database f])}
+  dispatch-on-initialized-driver
+  :hierarchy #'hierarchy)
+
+(defmethod do-with-resilient-connection
+  ::driver
+  [driver database f] (f driver database))

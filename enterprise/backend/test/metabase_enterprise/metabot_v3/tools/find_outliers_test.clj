@@ -14,7 +14,7 @@
 
 (defn- by-name
   [dimensions dimension-name]
-  (m/find-first (comp #{dimension-name} :name) dimensions))
+  (m/find-first (comp #{dimension-name} :display_name) dimensions))
 
 (defn- test-card
   []
@@ -71,7 +71,7 @@
   (mt/with-temp [:model/Card {report-id :id} (assoc (test-card) :type :question)]
     (let [report-details (mt/with-current-user (mt/user->id :crowberto)
                            (#'metabot-v3.dummy-tools/card-details report-id))
-          ->field-id #(u/prog1 (-> report-details :fields (by-name %) :field-id)
+          ->field-id #(u/prog1 (-> report-details :fields (by-name %) :field_id)
                         (when-not <>
                           (throw (ex-info (str "Column " % " not found") {:column %}))))
           result-field-id (->field-id "Average of Subtotal")]
@@ -83,7 +83,7 @@
   (let [query-id (u/generate-nano-id)
         query-details (mt/with-current-user (mt/user->id :crowberto)
                         (#'metabot-v3.dummy-tools/execute-query query-id (:dataset_query (test-card))))
-        ->field-id #(u/prog1 (-> query-details :result-columns (by-name %) :field-id)
+        ->field-id #(u/prog1 (-> query-details :result-columns (by-name %) :field_id)
                       (when-not <>
                         (throw (ex-info (str "Column " % " not found") {:column %}))))
         result-field-id (->field-id "Average of Subtotal")]
@@ -99,8 +99,7 @@
 
 (deftest ^:parallel metric-find-outliers-no-temporal-dimension-test
   (mt/with-temp [:model/Card {metric-id :id} (-> (test-card)
-                                                 (m/dissoc-in [:dataset_query :query :breakout]
-                                                              [:dataset_query :query :breakout-idents])
+                                                 (m/dissoc-in [:dataset_query :query :breakout])
                                                  (assoc :type :metric))]
     (mt/with-current-user (mt/user->id :crowberto)
       (is (= {:output "No temporal dimension found. Outliers can only be detected when a temporal dimension is available."}
@@ -109,8 +108,7 @@
 
 (deftest ^:parallel metric-find-outliers-no-numeric-dimension-test
   (mt/with-temp [:model/Card {metric-id :id} (-> (test-card)
-                                                 (m/dissoc-in [:dataset_query :query :aggregation]
-                                                              [:dataset_query :query :aggregation-idents])
+                                                 (m/dissoc-in [:dataset_query :query :aggregation])
                                                  (assoc :type :metric))]
     (mt/with-current-user (mt/user->id :crowberto)
       (is (= {:output "Could not determine result field."}
@@ -121,7 +119,7 @@
   (let [query-id (u/generate-nano-id)
         query-details (mt/with-current-user (mt/user->id :crowberto)
                         (#'metabot-v3.dummy-tools/execute-query query-id (:dataset_query (test-card))))
-        ->field-id #(u/prog1 (-> query-details :result-columns (by-name %) :field-id)
+        ->field-id #(u/prog1 (-> query-details :result-columns (by-name %) :field_id)
                       (when-not <>
                         (throw (ex-info (str "Column " % " not found") {:column %}))))
         result-field-id (->field-id "Average of Subtotal")]

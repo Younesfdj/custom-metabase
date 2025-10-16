@@ -6,12 +6,34 @@ import {
   AUTH_PROVIDER_URL,
   JWT_SHARED_SECRET,
   METABASE_INSTANCE_URL,
+  activateToken,
   restore,
-  setTokenFeatures,
 } from "e2e/support/helpers";
 import { enableJwtAuth } from "e2e/support/helpers/e2e-jwt-helpers";
 
-export const mockAuthProviderAndJwtSignIn = (user = USERS.admin) => {
+export const getSignedJwtForUser = async ({
+  user = USERS.admin,
+  expiredInSeconds = 60 * 10, // 10 minutes expiration,
+}: {
+  user?: { email: string; first_name: string; last_name: string };
+  expiredInSeconds?: number;
+}) => {
+  const secret = new TextEncoder().encode(JWT_SHARED_SECRET);
+
+  return new jose.SignJWT({
+    email: user.email,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    exp: Math.round(Date.now() / 1000) + expiredInSeconds,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .sign(secret);
+};
+
+export const mockAuthProviderAndJwtSignIn = (
+  user = USERS.admin,
+  { jwt }: { jwt?: string } = {},
+) => {
   cy.intercept("GET", `${AUTH_PROVIDER_URL}**`, async (req) => {
     try {
       const url = new URL(req.url);
@@ -26,15 +48,7 @@ export const mockAuthProviderAndJwtSignIn = (user = USERS.admin) => {
         return;
       }
 
-      const secret = new TextEncoder().encode(JWT_SHARED_SECRET);
-      const jwt = await new jose.SignJWT({
-        email: user.email,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        exp: Math.round(Date.now() / 1000) + 60 * 10, // 10 minutes expiration
-      })
-        .setProtectedHeader({ alg: "HS256" })
-        .sign(secret);
+      jwt = jwt || (await getSignedJwtForUser({ user }));
 
       req.reply({
         statusCode: 200,
@@ -56,7 +70,7 @@ export function signInAsAdminAndEnableEmbeddingSdk() {
   restore();
 
   cy.signInAsAdmin();
-  setTokenFeatures("all");
+  activateToken("bleeding-edge");
   enableJwtAuth();
   cy.request("PUT", "/api/setting", {
     "enable-embedding-sdk": true,

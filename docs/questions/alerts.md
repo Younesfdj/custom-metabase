@@ -20,6 +20,8 @@ To start using alerts, an administrator will need to have set up at least one of
 - [Slack](../configuring-metabase/slack.md)
 - [Webhooks](../configuring-metabase/webhooks.md)
 
+Only admins and people with [settings access](../permissions/application.md#settings-access) can use webhooks.
+
 ## Creating an alert
 
 ![Get alerts](./images/get-alerts-about-this.png)
@@ -31,7 +33,7 @@ To create an alert:
 3. Select **Create an alert**.
 4. Select what you want to be alerted about. The alert options will depend on the question's visualization. See [types of alerts](#types-of-alerts).
 5. Select when you want Metabase to check the results. Metabase can check for results by the minute, hourly, daily, weekly, monthly, or on a custom schedule that you set using the Quartz [cron syntax](https://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/crontrigger.html).
-6. Select the alert's destination: [email](../configuring-metabase/email.md), [Slack](../configuring-metabase/slack.md), or to a [webhook](../configuring-metabase/webhooks.md).
+6. Select the alert's destination: [email](../configuring-metabase/email.md), [Slack](../configuring-metabase/slack.md), or to a [webhook](../configuring-metabase/webhooks.md) (only admins and people with [settings access](../permissions/application.md#settings-access) can create and send to webhooks).
 7. Configure any other options (like [only sending the alert once](#send-a-one-time-alert)).
 8. Click **Done**.
 
@@ -149,6 +151,10 @@ See [Notification permissions](../permissions/notifications.md).
 ### Sending alerts to private Slack channels
 
 See [Sending alerts and subscriptions to private Slack channels](../configuring-metabase/slack.md#sending-alerts-and-subscriptions-to-private-slack-channels).
+
+## Removing Metabase branding from alerts
+
+See [Remove Metabase branding from exports](./exporting-results.md#remove-metabase-branding-from-exports).
 
 ## Further reading
 

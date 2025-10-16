@@ -7,7 +7,7 @@ import {
   setupUpdateSettingEndpoint,
 } from "__support__/server-mocks";
 import { renderWithProviders, screen, waitFor, within } from "__support__/ui";
-import { UndoListing } from "metabase/containers/UndoListing";
+import { UndoListing } from "metabase/common/components/UndoListing";
 import type { SettingKey } from "metabase-types/api";
 import {
   createMockSettingDefinition,
@@ -163,5 +163,22 @@ describe("FormattingWidget", () => {
       const toasts = screen.getAllByLabelText("check_filled icon");
       expect(toasts).toHaveLength(6);
     });
+  });
+
+  it("should provide expected number separators (#61854)", async () => {
+    await setup();
+
+    const seperatorStyleInput = await screen.findByLabelText("Separator style");
+    await userEvent.click(seperatorStyleInput);
+
+    const [dropdown] = screen.getAllByRole("listbox");
+    const children = within(dropdown).getAllByRole("option");
+    expect(children.length).toBe(5);
+
+    expect(within(dropdown).getByText("100,000.00")).toBeInTheDocument();
+    expect(within(dropdown).getByText("100 000,00")).toBeInTheDocument();
+    expect(within(dropdown).getByText("100.000,00")).toBeInTheDocument();
+    expect(within(dropdown).getByText("100000.00")).toBeInTheDocument();
+    expect(within(dropdown).getByText("100’000.00")).toBeInTheDocument();
   });
 });

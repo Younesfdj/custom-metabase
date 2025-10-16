@@ -1,7 +1,6 @@
 (ns metabase.driver.clickhouse
   "Driver for ClickHouse databases"
   (:require
-   [clojure.core.memoize :as memoize]
    [clojure.string :as str]
    [metabase.driver :as driver]
    [metabase.driver-api.core :as driver-api]
@@ -53,21 +52,47 @@
                               :left-join                       (not driver-api/is-test?)
                               :describe-fks                    false
                               :actions                         false
-                              :metadata/key-constraints        (not driver-api/is-test?)}]
+                              :metadata/key-constraints        false
+                              :database-routing                false}]
   (defmethod driver/database-supports? [:clickhouse feature] [_driver _feature _db] supported?))
 
 (def ^:private default-connection-details
   {:user "default" :password "" :dbname "default" :host "localhost" :port 8123})
 
-(defn- connection-details->spec* [details]
+(defmethod sql-jdbc.execute/do-with-connection-with-options :clickhouse
+  [driver db-or-id-or-spec {:keys [^String session-timezone _write?] :as options} f]
+  (sql-jdbc.execute/do-with-resolved-connection
+   driver
+   db-or-id-or-spec
+   options
+   (fn [^java.sql.Connection conn]
+     (when-let [db (cond
+                     ;; id?
+                     (integer? db-or-id-or-spec)
+                     (driver-api/with-metadata-provider db-or-id-or-spec
+                       (driver-api/database (driver-api/metadata-provider)))
+                     ;; db?
+                     (u/id db-or-id-or-spec)     db-or-id-or-spec
+                     ;; otherwise it's a spec and we can't get the db
+                     :else nil)]
+       (sql-jdbc.execute/set-role-if-supported! driver conn db))
+     (when-not (sql-jdbc.execute/recursive-connection?)
+       (when session-timezone
+         (let [^com.clickhouse.jdbc.ConnectionImpl clickhouse-conn (.unwrap conn com.clickhouse.jdbc.ConnectionImpl)
+               query-settings  (new QuerySettings)]
+           (.setOption query-settings "session_timezone" session-timezone)
+           (.setDefaultQuerySettings clickhouse-conn query-settings)))
+       (sql-jdbc.execute/set-best-transaction-level! driver conn)
+       (sql-jdbc.execute/set-time-zone-if-supported! driver conn session-timezone))
+     (f conn))))
+
+(defmethod sql-jdbc.conn/connection-details->spec :clickhouse
+  [_ details]
   (let [;; ensure defaults merge on top of nils
         details (reduce-kv (fn [m k v] (assoc m k (or v (k default-connection-details))))
                            default-connection-details
                            details)
         {:keys [user password dbname host port ssl clickhouse-settings max-open-connections]} details
-        ;; if multiple databases were specified for the connection,
-        ;; use only the first dbname as the "main" one
-        dbname (first (str/split (str/trim dbname) #" "))
         host   (cond ; JDBCv1 used to accept schema in the `host` configuration option
                  (str/starts-with? host "http://")  (subs host 7)
                  (str/starts-with? host "https://") (subs host 8)
@@ -84,69 +109,14 @@
          :http_connection_provider       "HTTP_URL_CONNECTION"
          :jdbc_ignore_unsupported_values "true"
          :jdbc_schema_term               "schema"
+         :select_sequential_consistency  true
          :max_open_connections           (or max-open-connections 100)
          ;; see also: https://clickhouse.com/docs/en/integrations/java#configuration
          :custom_http_params             (or clickhouse-settings "")}
         (sql-jdbc.common/handle-additional-options details :separator-style :url))))
 
-(defmethod sql-jdbc.execute/do-with-connection-with-options :clickhouse
-  [driver db-or-id-or-spec {:keys [^String session-timezone _write?] :as options} f]
-  (sql-jdbc.execute/do-with-resolved-connection
-   driver
-   db-or-id-or-spec
-   options
-   (fn [^java.sql.Connection conn]
-     (when-not (sql-jdbc.execute/recursive-connection?)
-       (when session-timezone
-         (let [^com.clickhouse.jdbc.ConnectionImpl clickhouse-conn (.unwrap conn com.clickhouse.jdbc.ConnectionImpl)
-               query-settings  (new QuerySettings)]
-           (.setOption query-settings "session_timezone" session-timezone)
-           (.setDefaultQuerySettings clickhouse-conn query-settings)))
-       (sql-jdbc.execute/set-best-transaction-level! driver conn)
-       (sql-jdbc.execute/set-time-zone-if-supported! driver conn session-timezone)
-       (when-let [db (cond
-                       ;; id?
-                       (integer? db-or-id-or-spec)
-                       (driver-api/with-metadata-provider db-or-id-or-spec
-                         (driver-api/database (driver-api/metadata-provider)))
-                       ;; db?
-                       (u/id db-or-id-or-spec)     db-or-id-or-spec
-                       ;; otherwise it's a spec and we can't get the db
-                       :else nil)]
-         (sql-jdbc.execute/set-role-if-supported! driver conn db)))
-     (f conn))))
-
-(def ^:private ^{:arglists '([db-details])} cloud?
-  "Returns true if the `db-details` are for a ClickHouse Cloud instance, and false otherwise. If it fails to connect
-   to the database, it throws a java.sql.SQLException."
-  (memoize/ttl
-   (fn [db-details]
-     (let [spec (connection-details->spec* db-details)]
-       (sql-jdbc.execute/do-with-connection-with-options
-        :clickhouse spec nil
-        (fn [^java.sql.Connection conn]
-          (with-open [stmt (.createStatement conn)
-                      rset (.executeQuery stmt "SELECT value='1' FROM system.settings WHERE name='cloud_mode'")]
-            (if (.next rset) (.getBoolean rset 1) false))))))
-   ;; cache the results for 48 hours; TTL is here only to eventually clear out old entries
-   :ttl/threshold (* 48 60 60 1000)))
-
-(defmethod sql-jdbc.conn/connection-details->spec :clickhouse
-  [_ details]
-  (cond-> (connection-details->spec* details)
-    (try (cloud? details)
-         (catch java.sql.SQLException _e
-           false))
-    ;; select_sequential_consistency guarantees that we can query data from any replica in CH Cloud
-    ;; immediately after it is written
-    (assoc :select_sequential_consistency true)))
-
 (defmethod driver/database-supports? [:clickhouse :uploads] [_driver _feature db]
-  (if (:details db)
-    (try (cloud? (:details db))
-         (catch java.sql.SQLException _e
-           false))
-    false))
+  (boolean (-> db clickhouse-version/dbms-version :cloud)))
 
 (defmethod driver/can-connect? :clickhouse
   [driver details]
@@ -267,9 +237,7 @@
 (defmethod driver/database-supports? [:clickhouse :connection-impersonation]
   [_driver _feature db]
   (if db
-    (try (clickhouse-version/is-at-least? 24 4 db)
-         (catch Throwable _e
-           false))
+    (clickhouse-version/is-at-least? 24 4 db)
     false))
 
 (defmethod driver.sql/set-role-statement :clickhouse
@@ -293,3 +261,9 @@
   [_ ^SQLException e]
   ;; the clickhouse driver doesn't set ErrorCode, we must parse it from the message
   (str/starts-with? (.getMessage e) "Code: 60."))
+
+#_{:clj-kondo/ignore [:deprecated-var]}
+(defmethod driver/describe-table-fks :clickhouse
+  [_driver _database _table]
+  (log/warn "Clickhouse does not support foreign keys. `describe-table-fks` should not have been called!")
+  #{})

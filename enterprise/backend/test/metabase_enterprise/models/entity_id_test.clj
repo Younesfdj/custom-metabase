@@ -21,6 +21,7 @@
     :model/Table
     :model/Field
     :model/FieldValues
+    :model/FieldUserSettings
     ;; Settings have human-selected unique names.
     :model/Setting})
 
@@ -48,6 +49,8 @@
     :model/DashboardCardSeries
     :model/LoginHistory
     :model/FieldValues
+    :model/MetabotConversation
+    :model/MetabotMessage
     :model/ModelIndex
     :model/ModelIndexValue
     :model/ModerationReview
@@ -73,6 +76,7 @@
     :model/QueryTable
     :model/RecentViews
     :model/Revision
+    :model/SemanticSearchTokenTracking
     :model/SearchIndexMetadata
     :model/Secret
     :model/Session
@@ -93,7 +97,7 @@
     (testing "All exported models should get entity id except those with other unique property (like name)"
       (is (= (set (concat serdes.models/exported-models
                           ;; those are inline models which still have entity_id
-                          ["DashboardCard" "DashboardTab" "Dimension" "MetabotEntity" "MetabotPrompt"]))
+                          ["DashboardCard" "DashboardTab" "Dimension" "MetabotPrompt"]))
              (set (->> (concat entity-id-models
                                entities-external-name)
                        (map name))))))

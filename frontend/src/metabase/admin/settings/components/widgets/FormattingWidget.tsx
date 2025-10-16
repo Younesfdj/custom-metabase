@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { t } from "ttag";
 import _ from "underscore";
 
+import { SettingsSection } from "metabase/admin/components/SettingsSection";
 import { useAdminSetting } from "metabase/api/utils";
 import {
   getCurrencyOptions,
@@ -11,8 +12,6 @@ import {
 } from "metabase/lib/formatting";
 import { Box, Radio, Select, Stack, Switch, Text } from "metabase/ui";
 import type { FormattingSettings } from "metabase-types/api";
-
-import { SettingsSection } from "../SettingsSection";
 
 import { SetByEnvVar } from "./AdminSettingInput";
 
@@ -159,7 +158,7 @@ export function FormattingWidget() {
                 { label: "100 000,00", value: ", " },
                 { label: "100.000,00", value: ",." },
                 { label: "100000.00", value: "." },
-                { label: "100'000.00", value: ".'" },
+                { label: "100’000.00", value: ".’" },
               ]}
               onChange={(newValue) =>
                 handleChange({

@@ -1,11 +1,13 @@
 import { t } from "ttag";
 
+import { SettingsPageWrapper } from "metabase/admin/components/SettingsSection";
+import { UpsellDevInstances } from "metabase/admin/upsells";
+
 import {
   EmbeddingSdkOptionCard,
   InteractiveEmbeddingOptionCard,
   StaticEmbeddingOptionCard,
 } from "../EmbeddingSettings/EmbeddingOption";
-import { SettingsPageWrapper } from "../SettingsSection";
 
 export function EmbeddingSettingsPage() {
   return (
@@ -16,6 +18,7 @@ export function EmbeddingSettingsPage() {
       <StaticEmbeddingOptionCard />
       <InteractiveEmbeddingOptionCard />
       <EmbeddingSdkOptionCard />
+      <UpsellDevInstances location="embedding-page" />
     </SettingsPageWrapper>
   );
 }

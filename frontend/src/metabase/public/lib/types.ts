@@ -1,4 +1,4 @@
-import type { CodeLanguage } from "metabase/components/CodeEditor";
+import type { CodeLanguage } from "metabase/common/components/CodeEditor";
 import type { Card, Dashboard } from "metabase-types/api";
 
 export type DisplayTheme = "light" | "night" | "transparent";
@@ -64,7 +64,8 @@ export type CodeSampleParameters = {
   resourceType: EmbedResourceType;
   resourceId: EmbedResource["id"];
   params: EmbeddingParametersValues;
-  displayOptions: EmbeddingDisplayOptions;
+  displayOptions?: EmbeddingDisplayOptions;
+  withIframeSnippet: boolean;
 };
 
 export type ClientCodeSampleConfig = {

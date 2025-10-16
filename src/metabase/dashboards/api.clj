@@ -18,6 +18,7 @@
    [metabase.dashboards.models.dashboard-card :as dashboard-card]
    [metabase.dashboards.models.dashboard-tab :as dashboard-tab]
    [metabase.dashboards.settings :as dashboards.settings]
+   [metabase.eid-translation.core :as eid-translation]
    [metabase.embedding.validation :as embedding.validation]
    [metabase.events.core :as events]
    [metabase.lib-be.metadata.jvm :as lib.metadata.jvm]
@@ -28,7 +29,6 @@
    [metabase.parameters.params :as params]
    [metabase.parameters.schema :as parameters.schema]
    [metabase.permissions.core :as perms]
-   [metabase.permissions.validation :as validation]
    [metabase.public-sharing.validation :as public-sharing.validation]
    ^{:clj-kondo/ignore [:deprecated-namespace]}
    [metabase.pulse.core :as pulse]
@@ -128,27 +128,28 @@
        [:collection_position {:optional true} [:maybe ms/PositiveInt]]]]
   ;; if we're trying to save the new dashboard in a Collection make sure we have permissions to do that
   (collection/check-write-perms-for-collection collection_id)
-  (let [dashboard-data {:name                name
-                        :description         description
-                        :parameters          (or parameters [])
-                        :creator_id          api/*current-user-id*
-                        :cache_ttl           cache_ttl
-                        :collection_id       collection_id
-                        :collection_position collection_position}
-        dash           (t2/with-transaction [_conn]
-                         ;; Adding a new dashboard at `collection_position` could cause other dashboards in this
-                         ;; collection to change position, check that and fix up if needed
-                         (api/maybe-reconcile-collection-position! dashboard-data)
-                         ;; Ok, now save the Dashboard
-                         (first (t2/insert-returning-instances! :model/Dashboard dashboard-data)))]
-    (events/publish-event! :event/dashboard-create {:object dash :user-id api/*current-user-id*})
-    (analytics/track-event! :snowplow/dashboard
-                            {:event        :dashboard-created
-                             :dashboard-id (u/the-id dash)})
-    (-> dash
-        hydrate-dashboard-details
-        collection.root/hydrate-root-collection
-        (assoc :last-edit-info (revisions/edit-information-for-user @api/*current-user*)))))
+  (lib.metadata.jvm/with-metadata-provider-cache
+    (let [dashboard-data {:name                name
+                          :description         description
+                          :parameters          (or parameters [])
+                          :creator_id          api/*current-user-id*
+                          :cache_ttl           cache_ttl
+                          :collection_id       collection_id
+                          :collection_position collection_position}
+          dash           (t2/with-transaction [_conn]
+                           ;; Adding a new dashboard at `collection_position` could cause other dashboards in this
+                           ;; collection to change position, check that and fix up if needed
+                           (api/maybe-reconcile-collection-position! dashboard-data)
+                           ;; Ok, now save the Dashboard
+                           (first (t2/insert-returning-instances! :model/Dashboard dashboard-data)))]
+      (events/publish-event! :event/dashboard-create {:object dash :user-id api/*current-user-id*})
+      (analytics/track-event! :snowplow/dashboard
+                              {:event        :dashboard-created
+                               :dashboard-id (u/the-id dash)})
+      (-> dash
+          hydrate-dashboard-details
+          collection.root/hydrate-root-collection
+          (assoc :last-edit-info (revisions/edit-information-for-user @api/*current-user*))))))
 
 ;;; -------------------------------------------- Hiding Unreadable Cards ---------------------------------------------
 
@@ -442,6 +443,9 @@
               (:action_id dashboard-card)
               nil
 
+              (some-> dashboard-card :visualization_settings :virtual_card :display #{"iframe"})
+              dashboard-card
+
               ;; text cards need no manipulation
               (some-> dashboard-card :visualization_settings :virtual_card :display #{"text" "heading"})
               dashboard-card
@@ -535,15 +539,34 @@
     (events/publish-event! :event/dashboard-create {:object dashboard :user-id api/*current-user-id*})
     dashboard))
 
+;;; --------------------------------------------- List public and embeddable dashboards ------------------------------
+
+(api.macros/defendpoint :get "/public"
+  "Fetch a list of Dashboards with public UUIDs. These dashboards are publicly-accessible *if* public sharing is
+  enabled."
+  []
+  (perms/check-has-application-permission :setting)
+  (public-sharing.validation/check-public-sharing-enabled)
+  (t2/select [:model/Dashboard :name :id :public_uuid], :public_uuid [:not= nil], :archived false))
+
+(api.macros/defendpoint :get "/embeddable"
+  "Fetch a list of Dashboards where `enable_embedding` is `true`. The dashboards can be embedded using the embedding
+  endpoints and a signed JWT."
+  []
+  (perms/check-has-application-permission :setting)
+  (embedding.validation/check-embedding-enabled)
+  (t2/select [:model/Dashboard :name :id], :enable_embedding true, :archived false))
+
 ;;; --------------------------------------------- Fetching/Updating/Etc. ---------------------------------------------
 
 (api.macros/defendpoint :get "/:id"
   "Get Dashboard with ID."
   [{:keys [id]} :- [:map
-                    [:id ms/PositiveInt]]
+                    [:id [:or ms/PositiveInt ms/NanoIdString]]]
    {dashboard-load-id :dashboard_load_id}]
   (with-dashboard-load-id dashboard-load-id
-    (let [dashboard (get-dashboard id)]
+    (let [resolved-id (eid-translation/->id-or-404 :dashboard id)
+          dashboard (get-dashboard resolved-id)]
       (u/prog1 (first (revisions/with-last-edit-info [dashboard] :dashboard))
         (events/publish-event! :event/dashboard-read {:object-id (:id dashboard) :user-id api/*current-user-id*})))))
 
@@ -744,6 +767,7 @@
    [:parameter_mappings {:optional true} [:maybe [:sequential [:map
                                                                [:parameter_id ms/NonBlankString]
                                                                [:target       :any]]]]]
+   [:inline_parameters  {:optional true} [:maybe [:sequential ms/NonBlankString]]]
    [:series             {:optional true} [:maybe [:sequential map?]]]])
 
 (def ^:private UpdatedDashboardTab
@@ -905,20 +929,17 @@
                                            :embedding_params :archived :auto_apply_filters}))]
              (when (api/column-will-change? :archived current-dash dash-updates)
                (if (:archived dash-updates)
-                 (queries/with-allowed-changes-to-internal-dashboard-card
-                   (t2/update! :model/Card
-                               :dashboard_id id
-                               :archived false
-                               {:archived true :archived_directly false}))
-                 (queries/with-allowed-changes-to-internal-dashboard-card
-                   (t2/update! :model/Card
-                               :dashboard_id id
-                               :archived true
-                               :archived_directly false
-                               {:archived false}))))
+                 (t2/update! :model/Card
+                             :dashboard_id id
+                             :archived false
+                             {:archived true :archived_directly false})
+                 (t2/update! :model/Card
+                             :dashboard_id id
+                             :archived true
+                             :archived_directly false
+                             {:archived false})))
              (when (api/column-will-change? :collection_id current-dash dash-updates)
-               (queries/with-allowed-changes-to-internal-dashboard-card
-                 (t2/update! :model/Card :dashboard_id id {:collection_id (:collection_id dash-updates)})))
+               (t2/update! :model/Card :dashboard_id id {:collection_id (:collection_id dash-updates)}))
              (t2/update! :model/Dashboard id updates)
              (when (contains? updates :collection_id)
                (events/publish-event! :event/collection-touch {:collection-id id :user-id api/*current-user-id*}))
@@ -1025,11 +1046,12 @@
 (api.macros/defendpoint :get "/:id/query_metadata"
   "Get all of the required query metadata for the cards on dashboard."
   [{:keys [id]} :- [:map
-                    [:id ms/PositiveInt]]
+                    [:id [:or ms/PositiveInt ms/NanoIdString]]]
    {dashboard-load-id :dashboard_load_id}]
   (with-dashboard-load-id dashboard-load-id
     (perms/with-relevant-permissions-for-user api/*current-user-id*
-      (let [dashboard (get-dashboard id)]
+      (let [resolved-id (eid-translation/->id-or-404 :dashboard id)
+            dashboard (get-dashboard resolved-id)]
         (queries/batch-fetch-dashboard-metadata [dashboard])))))
 
 ;;; ----------------------------------------------- Sharing is Caring ------------------------------------------------
@@ -1053,29 +1075,13 @@
   "Delete the publicly-accessible link to this Dashboard."
   [{:keys [dashboard-id]} :- [:map
                               [:dashboard-id ms/PositiveInt]]]
-  (validation/check-has-application-permission :setting)
+  (perms/check-has-application-permission :setting)
   (public-sharing.validation/check-public-sharing-enabled)
   (api/check-exists? :model/Dashboard :id dashboard-id, :public_uuid [:not= nil], :archived false)
   (t2/update! :model/Dashboard dashboard-id
               {:public_uuid       nil
                :made_public_by_id nil})
   {:status 204, :body nil})
-
-(api.macros/defendpoint :get "/public"
-  "Fetch a list of Dashboards with public UUIDs. These dashboards are publicly-accessible *if* public sharing is
-  enabled."
-  []
-  (validation/check-has-application-permission :setting)
-  (public-sharing.validation/check-public-sharing-enabled)
-  (t2/select [:model/Dashboard :name :id :public_uuid], :public_uuid [:not= nil], :archived false))
-
-(api.macros/defendpoint :get "/embeddable"
-  "Fetch a list of Dashboards where `enable_embedding` is `true`. The dashboards can be embedded using the embedding
-  endpoints and a signed JWT."
-  []
-  (validation/check-has-application-permission :setting)
-  (embedding.validation/check-embedding-enabled)
-  (t2/select [:model/Dashboard :name :id], :enable_embedding true, :archived false))
 
 (api.macros/defendpoint :get "/:id/related"
   "Return related entities."
@@ -1106,7 +1112,7 @@
                                      "/"
                                      (collection/children-location
                                       (t2/select-one :model/Collection :personal_owner_id api/*current-user-id*)))))
-        dashboard (dashboard/save-transient-dashboard! dashboard parent-collection-id)]
+        dashboard (dashboard/save-transient-dashboard! (assoc dashboard :creator_id api/*current-user-id*) parent-collection-id)]
     (events/publish-event! :event/dashboard-create {:object dashboard :user-id api/*current-user-id*})
     dashboard))
 
@@ -1121,10 +1127,11 @@
   [{:keys [id param-key]}      :- [:map
                                    [:id ms/PositiveInt]]
    constraint-param-key->value :- [:map-of string? any?]]
-  (let [dashboard (hydrate-dashboard-details (api/read-check :model/Dashboard id))]
-    ;; If a user can read the dashboard, then they can lookup filters. This also works with sandboxing.
-    (binding [qp.perms/*param-values-query* true]
-      (parameters.dashboard/param-values dashboard param-key constraint-param-key->value))))
+  (lib.metadata.jvm/with-metadata-provider-cache
+    (let [dashboard (hydrate-dashboard-details (api/read-check :model/Dashboard id))]
+      ;; If a user can read the dashboard, then they can lookup filters. This also works with sandboxing.
+      (binding [qp.perms/*param-values-query* true]
+        (parameters.dashboard/param-values dashboard param-key constraint-param-key->value)))))
 
 (api.macros/defendpoint :get "/:id/params/:param-key/search/:query"
   "Fetch possible values of the parameter whose ID is `:param-key` that contain `:query`. Optionally restrict
@@ -1139,11 +1146,12 @@
                                     [:id    ms/PositiveInt]
                                     [:query ms/NonBlankString]]
    constraint-param-key->value  :- [:map-of string? any?]]
-  (let [dashboard (api/read-check :model/Dashboard id)]
-    ;; If a user can read the dashboard, then they can lookup filters. This also works with sandboxing.
-    (binding [qp.perms/*param-values-query* true
-              chain-filter/*allow-implicit-uuid-field-remapping* false]
-      (parameters.dashboard/param-values dashboard param-key constraint-param-key->value query))))
+  (lib.metadata.jvm/with-metadata-provider-cache
+    (let [dashboard (api/read-check :model/Dashboard id)]
+      ;; If a user can read the dashboard, then they can lookup filters. This also works with sandboxing.
+      (binding [qp.perms/*param-values-query* true
+                chain-filter/*allow-implicit-uuid-field-remapping* false]
+        (parameters.dashboard/param-values dashboard param-key constraint-param-key->value query)))))
 
 (api.macros/defendpoint :get "/:id/params/:param-key/remapping"
   "Fetch the remapped value for a given value of the parameter with ID `:param-key`.

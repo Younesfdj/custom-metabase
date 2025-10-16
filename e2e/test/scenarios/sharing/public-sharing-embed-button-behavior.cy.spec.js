@@ -133,8 +133,8 @@ const { H } = cy;
             H.openSharingMenu();
 
             H.sharingMenu().within(() => {
-              cy.findByText("Public links are off").should("be.visible");
-              cy.findByText("Enable them in settings").should("be.visible");
+              cy.findByText("Public link").should("be.visible");
+              cy.findByText("Enable").should("be.visible");
             });
 
             cy.findByTestId("embed-menu-embed-modal-item").click();
@@ -180,7 +180,7 @@ describe("embed modal display", () => {
 
   describe("when the user has a paid instance", () => {
     it("should display a disabled state and a link to the Interactive embedding settings", () => {
-      H.setTokenFeatures("all");
+      H.activateToken("pro-self-hosted");
       H.visitDashboard("@dashboardId");
 
       H.openSharingMenu("Embed");
@@ -529,7 +529,7 @@ describe("#39152 sharing an unsaved question", () => {
 
         describe("Pro/EE instances", () => {
           beforeEach(() => {
-            H.setTokenFeatures("all");
+            H.activateToken("pro-self-hosted");
           });
 
           it("should send `static_embed_code_copied` when copying the static embed code", () => {

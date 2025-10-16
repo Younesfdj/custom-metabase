@@ -23,11 +23,8 @@
 
 (deftest ^:parallel snippet-tag-test
   (are [exp input] (= exp (set (keys (lib.native/extract-template-tags input))))
-    #{"snippet:   foo  "} "SELECT * FROM table WHERE {{snippet:   foo  }} AND some_field IS NOT NULL"
+    #{"snippet:   foo"} "SELECT * FROM table WHERE {{snippet:   foo  }} AND some_field IS NOT NULL"
     #{"snippet:   foo  *#&@"} "SELECT * FROM table WHERE {{snippet:   foo  *#&@}}"
-    ;; TODO: This logic should trim the whitespace and unify these two snippet names.
-    ;; I think this is a bug in the original code but am aiming to reproduce it exactly for now.
-    ;; Tech debt issue: #39378
     #{"snippet: foo" "snippet:foo"} "SELECT * FROM table WHERE {{snippet: foo}} AND {{snippet:foo}}"))
 
 (deftest ^:parallel card-tag-test
@@ -40,18 +37,6 @@
     #{"#123"} "SELECT * FROM table WHERE {{ #not-this }} AND {{#123}}"
     #{} "{{ #123foo }}"))
 
-(deftest ^:parallel function-tag-test
-  (are [exp input] (= exp (update-vals (lib.native/extract-template-tags input)
-                                       #(select-keys % [:type :name])))
-    {"unit" {:name "unit"
-             :type :temporal-unit}} "SELECT *, {{mb.time_grouping(\"unit\", \"foo\")}} FROM table WHERE some_field IS NOT NULL"
-    {} "SELECT *, {{mb.unrecognized_name('unit', 'foo')}} FROM table WHERE some_field IS NOT NULL"
-    {} "SELECT *, {{mb.time_grouping('unit', '')}} FROM table WHERE some_field IS NOT NULL"
-    {"unit" {:name "unit"
-             :type :temporal-unit}} "SELECT *, {{mb.time_grouping('unit', 'foo')}}, {{mb.time_grouping('unit', 'bar')}} FROM table WHERE some_field IS NOT NULL"
-    {"unit" {:name "unit"
-             :type :temporal-unit}} "SELECT *, {{mb.time_grouping(\"unit\", \"foo\")}}, {{unit}} FROM table WHERE some_field IS NOT NULL"))
-
 (deftest ^:parallel template-tags-test
   (testing "snippet tags"
     (is (=? {"snippet:foo" {:type         :snippet
@@ -59,18 +44,11 @@
                             :snippet-name "foo"
                             :id           string?}}
             (lib.native/extract-template-tags "SELECT * FROM table WHERE {{snippet:foo}}")))
-    (is (=? {"snippet:foo"  {:type         :snippet
-                             :name         "snippet:foo"
-                             :snippet-name "foo"
-                             :id           string?}
-             "snippet: foo" {:type         :snippet
+    (is (=? {"snippet: foo" {:type         :snippet
                              :name         "snippet: foo"
                              :snippet-name "foo"
                              :id           string?}}
-            ;; TODO: This should probably be considered a bug - whitespace matters for the name.
-            ;; Tech debt issue: #39378
             (lib.native/extract-template-tags "SELECT * FROM {{snippet: foo}} WHERE {{snippet:foo}}"))))
-
   (testing "renaming a variable"
     (let [old-tag {:type         :text
                    :name         "foo"
@@ -107,7 +85,7 @@
 
   (testing "general case, add and remove"
     (let [mktag (fn [base]
-                  (merge {:type    :text
+                  (merge {:type         :text
                           :display-name (u.humanization/name->human-readable-name :simple (:name base))
                           :id           string?}
                          base))
@@ -122,12 +100,12 @@
                         :snippet-name "another snippet"
                         :type         :snippet})
 
-          c1    (mktag {:name    "#123-card-1"
-                        :type    :card
-                        :card-id 123})
-          c2    (mktag {:name    "#321"
-                        :type    :card
-                        :card-id 321})]
+          c1 (mktag {:name    "#123-card-1"
+                     :type    :card
+                     :card-id 123})
+          c2 (mktag {:name    "#321"
+                     :type    :card
+                     :card-id 321})]
       (is (=? {"foo"                   v1
                "#123-card-1"           c1
                "snippet:first snippet" (dissoc s1 :snippet-id)}
@@ -146,13 +124,7 @@
         (is (= {"snippet:another snippet" (assoc (dissoc s2 :snippet-id) :id s1-uuid)}
                (lib.native/extract-template-tags
                 "SELECT * FROM {{snippet:another snippet}}"
-                {"snippet:first snippet" (assoc s1 :id s1-uuid)}))))
-      (is (=? {"var" (mktag {:name "var"
-                             :type :temporal-unit})}
-              (lib.native/extract-template-tags
-               "SELECT {{mb.time_grouping('var', 'created_at')}} from orders"
-               {"var" (mktag {:name "var"
-                              :id (str (random-uuid))})}))))))
+                {"snippet:first snippet" (assoc s1 :id s1-uuid)})))))))
 
 (def ^:private qp-results-metadata
   "Capture of the `data.results_metadata` that would come back when running `SELECT * FROM VENUES;` with the Query
@@ -439,59 +411,20 @@
         query (lib/query mp (lib.metadata/card mp (:id card)))]
     (is (=? [{:name         "ID"
               :display-name "ID"
-              :ident        (lib/native-ident "ID" (:entity-id card))
               :lib/source   :source/card}
              {:name         "NAME"
               :display-name "Name"
-              :ident        (lib/native-ident "NAME" (:entity-id card))
               :lib/source   :source/card}
              {:name         "CATEGORY_ID"
               :display-name "Category ID"
-              :ident        (lib/native-ident "CATEGORY_ID" (:entity-id card))
               :lib/source   :source/card}
              {:name         "LATITUDE"
               :display-name "Latitude"
-              :ident        (lib/native-ident "LATITUDE" (:entity-id card))
               :lib/source   :source/card}
              {:name         "LONGITUDE"
               :display-name "Longitude"
-              :ident        (lib/native-ident "LONGITUDE" (:entity-id card))
               :lib/source   :source/card}
              {:name         "PRICE"
               :display-name "Price"
-              :ident        (lib/native-ident "PRICE" (:entity-id card))
               :lib/source   :source/card}]
             (lib/returned-columns query)))))
-
-(deftest ^:parallel validate-native-query-test
-  (let [cases [["SELECT {{mb.time_grouping(\"unit\", \"created_at\")}} as unit FROM ORDERS"
-                []]
-               ["SELECT {{mb.foobar(\"foo\")}} as foo FROM ORDERS"
-                ["Unknown function: mb.foobar"]]
-               ["SELECT {{mb.time_grouping(\"unit\", \"created_at\")}} as unit, {{unit}} as filter FROM ORDERS"
-                ["Parameter unit is used as both a time grouping and a variable. This is not allowed."]]
-               ["SELECT {{mb.time_grouping(\"foo\", \"created_at\")}} as unit FROM ORDERS"
-                []]
-               ["SELECT {{mb.time_grouping(\"unit\", \"created_at\")}} as unit1, {{mb.time_grouping(\"unit\", \"updated_at\")}} as unit2 FROM ORDERS"
-                []]
-               ["SELECT {{mb.time_grouping(\"unit\", \"created_at\")}} as unit, {{other}} as something FROM ORDERS"
-                []]
-               ["SELECT {{mb.time_grouping(unit, \"created_at\")}} as unit FROM ORDERS"
-                ["Syntax error in: mb.time_grouping(unit, \"created_at\")"]]
-               ["SELECT {{mb.time_grouping(\"unit\", created_at)}} as unit FROM ORDERS"
-                ["Syntax error in: mb.time_grouping(\"unit\", created_at)"]]
-               ["SELECT {{mb.time_grouping(\"unit\")}} as unit FROM ORDERS"
-                ["mb.time_grouping got too few parameters.  Got 1, expected at least 2."]]
-               ["SELECT {{mb.time_grouping(\"unit\", '')}} as unit FROM ORDERS"
-                ["mb.time_grouping got invalid parameters"]]
-               ["SELECT {{mb.time_grouping('unit', 'created_at')}} as unit FROM ORDERS"
-                []]
-               ["SELECT count(*) as c, {{mb.time_grouping(\"unit\", \"created_\"}} as unit FROM ORDERS group by unit"
-                ["Syntax error in: mb.time_grouping(\"unit\", \"created_\""]]
-               ["SELECT {{mb.time_grouping}} {{mb.time_grouping}} FROM ORDERS"
-                ["mb.time_grouping should be used as a function call, e.g. mb.time_grouping('arg1', ...)"
-                 "mb.time_grouping should be used as a function call, e.g. mb.time_grouping('arg1', ...)"]]]]
-    (doseq [[query expected] cases]
-      (is (=? expected (-> {:stages [{:native query}]}
-                           lib.native/validate-native-query))
-          (str "Did not get appropriate errors for: " query)))))

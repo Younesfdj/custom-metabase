@@ -40,6 +40,7 @@
    [metabase.util.date-2 :as u.date]
    [metabase.util.honey-sql-2 :as h2x]
    [metabase.util.log :as log]
+   [metabase.util.random :as u.random]
    [metabase.util.regex :as u.regex]
    [potemkin.types :as p.types]
    [pretty.core :as pretty]
@@ -99,9 +100,23 @@
         [id s cnt]))))
 
 (defmethod sanity-check-test-expected-rows :sqlite
-  [_driver _timezone]
-  (for [[id s cnt] sanity-check-test-utc-results]
-    [id (u.date/format-sql (t/local-date-time (u.date/parse s))) cnt]))
+  [_driver timezone]
+  (case timezone
+    :pacific [[1 "2015-06-06 10:40:00.000" 4]
+              [2 "2015-06-10 19:51:00.000" 0]
+              [3 "2015-06-09 15:42:00.000" 5]
+              [4 "2015-06-22 23:49:00.000" 3]
+              [5 "2015-06-20 01:45:00.000" 3]]
+    :utc     [[1 "2015-06-06 10:40:00.000" 4]
+              [2 "2015-06-10 19:51:00.000" 0]
+              [3 "2015-06-09 15:42:00.000" 5]
+              [4 "2015-06-22 23:49:00.000" 3]
+              [5 "2015-06-20 01:45:00.000" 3]]
+    :eastern [[1 "2015-06-06 10:40:00.000" 4]
+              [2 "2015-06-10 19:51:00.000" 0]
+              [3 "2015-06-09 15:42:00.000" 5]
+              [4 "2015-06-22 23:49:00.000" 3]
+              [5 "2015-06-20 01:45:00.000" 3]]))
 
 (deftest sanity-check-test
   (mt/test-drivers (mt/normal-drivers-with-feature ::sanity-check-test)
@@ -240,16 +255,16 @@
 ;;; return them directly. This is less than ideal. TIMEZONE FIXME
 (defmethod group-by-default-test-expected-rows :sqlite
   [_driver]
-  [["2015-06-01 10:31:00" 1]
-   ["2015-06-01 16:06:00" 1]
-   ["2015-06-01 17:23:00" 1]
-   ["2015-06-01 18:55:00" 1]
-   ["2015-06-01 21:04:00" 1]
-   ["2015-06-01 21:19:00" 1]
-   ["2015-06-02 02:13:00" 1]
-   ["2015-06-02 05:37:00" 1]
-   ["2015-06-02 08:20:00" 1]
-   ["2015-06-02 11:11:00" 1]])
+  [["2015-06-01 10:31:00.000" 1]
+   ["2015-06-01 16:06:00.000" 1]
+   ["2015-06-01 17:23:00.000" 1]
+   ["2015-06-01 18:55:00.000" 1]
+   ["2015-06-01 21:04:00.000" 1]
+   ["2015-06-01 21:19:00.000" 1]
+   ["2015-06-02 02:13:00.000" 1]
+   ["2015-06-02 05:37:00.000" 1]
+   ["2015-06-02 08:20:00.000" 1]
+   ["2015-06-02 11:11:00.000" 1]])
 
 (deftest group-by-default-test
   (mt/test-drivers (mt/normal-drivers)
@@ -307,16 +322,16 @@
 ;;; Always in UTC so isn't impacted by changes in report-timezone
 (defmethod group-by-default-test-2-expected-rows :sqlite
   [_driver]
-  [["2015-06-01 10:31:00" 1]
-   ["2015-06-01 16:06:00" 1]
-   ["2015-06-01 17:23:00" 1]
-   ["2015-06-01 18:55:00" 1]
-   ["2015-06-01 21:04:00" 1]
-   ["2015-06-01 21:19:00" 1]
-   ["2015-06-02 02:13:00" 1]
-   ["2015-06-02 05:37:00" 1]
-   ["2015-06-02 08:20:00" 1]
-   ["2015-06-02 11:11:00" 1]])
+  [["2015-06-01 10:31:00.000" 1]
+   ["2015-06-01 16:06:00.000" 1]
+   ["2015-06-01 17:23:00.000" 1]
+   ["2015-06-01 18:55:00.000" 1]
+   ["2015-06-01 21:04:00.000" 1]
+   ["2015-06-01 21:19:00.000" 1]
+   ["2015-06-02 02:13:00.000" 1]
+   ["2015-06-02 05:37:00.000" 1]
+   ["2015-06-02 08:20:00.000" 1]
+   ["2015-06-02 11:11:00.000" 1]])
 
 (deftest group-by-default-test-2
   (mt/test-drivers (mt/normal-drivers)
@@ -345,7 +360,16 @@
 
 (defmethod group-by-default-test-3-expected-rows :sqlite
   [_driver]
-  (sad-toucan-result (default-timezone-parse-fn :utc) (comp u.date/format-sql t/local-date-time)))
+  [["2015-06-01 10:31:00.000" 1]
+   ["2015-06-01 16:06:00.000" 1]
+   ["2015-06-01 17:23:00.000" 1]
+   ["2015-06-01 18:55:00.000" 1]
+   ["2015-06-01 21:04:00.000" 1]
+   ["2015-06-01 21:19:00.000" 1]
+   ["2015-06-02 02:13:00.000" 1]
+   ["2015-06-02 05:37:00.000" 1]
+   ["2015-06-02 08:20:00.000" 1]
+   ["2015-06-02 11:11:00.000" 1]])
 
 (deftest group-by-default-test-3
   ;; Changes the JVM timezone from UTC to Pacific, this test isn't run on H2 as the database stores it's timezones in
@@ -1164,10 +1188,10 @@
                :breakout    [!year.date]}))))))
 
 ;; RELATIVE DATES
-(p.types/deftype+ ^:private TimestampDatasetDef [intervalSeconds intervalCount]
+(p.types/deftype+ ^:private TimestampDatasetDef [randomName intervalSeconds intervalCount]
   pretty/PrettyPrintable
   (pretty [_]
-    (list 'TimestampDatasetDef. intervalSeconds intervalCount)))
+    (list 'TimestampDatasetDef. randomName intervalSeconds intervalCount)))
 
 (defn- driver->current-datetime-base-type
   "Returns the :base-type of the \"current timestamp\" HoneySQL form defined by the driver `d`. Relies upon the driver
@@ -1183,39 +1207,39 @@
   (let [interval-seconds (.intervalSeconds this)
         intervalCount    (.intervalCount this)]
     (mt/dataset-definition
-     (str "interval_" interval-seconds (when-not (= 30 intervalCount) (str "_" intervalCount)))
-     ["checkins"
-      [{:field-name "timestamp"
-        :base-type  (or (driver->current-datetime-base-type driver/*driver*) :type/DateTime)}]
-      (mapv (fn [i]
-              ;; TIMESTAMP FIXME — not sure if still needed
-              ;;
-              ;; Create timestamps using relative dates (e.g. `DATEADD(second, -195, GETUTCDATE())` instead of
-              ;; generating Java classes here so they'll be in the DB's native timezone. Some DBs refuse to use
-              ;; the same timezone we're running the tests from *cough* SQL Server *cough*
-              [(u/prog1 (if (and (isa? driver/hierarchy driver/*driver* :sql)
-                                 ;; BigQuery/Vertica don't insert rows using SQL statements
-                                 ;;
-                                 ;; TODO -- make 'insert-rows-using-statements?` a multimethod so we don't need to
-                                 ;; hardcode the whitelist here.
-                                 (not (#{:vertica :bigquery-cloud-sdk} driver/*driver*)))
-                          (sql.qp/compiled
-                           (sql.qp/add-interval-honeysql-form driver/*driver*
-                                                              (sql.qp/current-datetime-honeysql-form driver/*driver*)
-                                                              (* i interval-seconds)
-                                                              :second))
-                          (u.date/add :second (* i interval-seconds)))
-                 (assert <>))])
-            (let [shift (quot intervalCount 2)
-                  lower-bound (- shift)
-                  upper-bound (- intervalCount shift)]
-              (range lower-bound upper-bound)))])))
+     (str "interval_" interval-seconds (when-not (= 30 intervalCount) (str "_" intervalCount)) "_" (.randomName this))
+     [["checkins"
+       [{:field-name "timestamp"
+         :base-type  (or (driver->current-datetime-base-type driver/*driver*) :type/DateTime)}]
+       (mapv (fn [i]
+               ;; TIMESTAMP FIXME — not sure if still needed
+               ;;
+               ;; Create timestamps using relative dates (e.g. `DATEADD(second, -195, GETUTCDATE())` instead of
+               ;; generating Java classes here so they'll be in the DB's native timezone. Some DBs refuse to use
+               ;; the same timezone we're running the tests from *cough* SQL Server *cough*
+               [(u/prog1 (if (and (isa? driver/hierarchy driver/*driver* :sql)
+                                  ;; BigQuery/Vertica don't insert rows using SQL statements
+                                  ;;
+                                  ;; TODO -- make 'insert-rows-using-statements?` a multimethod so we don't need to
+                                  ;; hardcode the whitelist here.
+                                  (not (#{:vertica :bigquery-cloud-sdk} driver/*driver*)))
+                           (sql.qp/compiled
+                            (sql.qp/add-interval-honeysql-form driver/*driver*
+                                                               (sql.qp/current-datetime-honeysql-form driver/*driver*)
+                                                               (* i interval-seconds)
+                                                               :second))
+                           (u.date/add :second (* i interval-seconds)))
+                  (assert <>))])
+             (let [shift (quot intervalCount 2)
+                   lower-bound (- shift)
+                   upper-bound (- intervalCount shift)]
+               (range lower-bound upper-bound)))]])))
 
 (defn- dataset-def-with-timestamps
   ([interval-seconds]
    (dataset-def-with-timestamps interval-seconds 30))
   ([interval-seconds interval-count]
-   (TimestampDatasetDef. interval-seconds interval-count)))
+   (TimestampDatasetDef. (u.random/random-name) interval-seconds interval-count)))
 
 (def ^:private checkins:4-per-minute
   "Dynamically generated dataset with 30 checkins spaced 15 seconds apart, from 3 mins 45 seconds ago to 3 minutes 30

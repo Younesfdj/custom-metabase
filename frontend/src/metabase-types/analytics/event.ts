@@ -3,6 +3,7 @@ import type {
   ChecklistItemValue,
 } from "metabase/home/components/Onboarding/types";
 import type { KeyboardShortcutId } from "metabase/palette/shortcuts";
+import type { Engine, VisualizationDisplay } from "metabase-types/api";
 
 type SimpleEventSchema = {
   event: string;
@@ -18,14 +19,30 @@ type ValidateEvent<
     Record<Exclude<keyof T, keyof SimpleEventSchema>, never>,
 > = T;
 
+export type CustomSMTPSetupClickedEvent = ValidateEvent<{
+  event: "custom_smtp_setup_clicked";
+  event_detail: "self-hosted" | "cloud";
+}>;
+
+export type CustomSMTPSetupSuccessEvent = ValidateEvent<{
+  event: "custom_smtp_setup_success";
+  event_detail: "self-hosted" | "cloud";
+}>;
+
 type CSVUploadClickedEvent = ValidateEvent<{
   event: "csv_upload_clicked";
-  triggered_from: "left-nav";
+  triggered_from: "add-data-modal" | "collection";
 }>;
 
 export type DatabaseAddClickedEvent = ValidateEvent<{
   event: "database_add_clicked";
-  triggered_from: "left-nav" | "db-list";
+  triggered_from: "db-list";
+}>;
+
+export type DatabaseEngineSelectedEvent = ValidateEvent<{
+  event: "database_setup_selected";
+  event_detail: Engine["driver-name"];
+  triggered_from: "add-data-modal";
 }>;
 
 type OnboardingChecklistOpenedEvent = ValidateEvent<{
@@ -84,7 +101,7 @@ export type ErrorDiagnosticModalSubmittedEvent = ValidateEvent<{
 
 export type GsheetsConnectionClickedEvent = ValidateEvent<{
   event: "sheets_connection_clicked";
-  triggered_from: "db-page" | "left-nav";
+  triggered_from: "db-page" | "add-data-modal";
 }>;
 
 export type GsheetsImportClickedEvent = ValidateEvent<{
@@ -135,16 +152,141 @@ export type VisualizerModalEvent = ValidateEvent<
         | "visualizer_datasource_removed"
         | "visualizer_datasource_added"
         | "visualizer_datasource_replaced"
+        | "visualizer_datasource_reset"
         | "visualizer_column_removed"
         | "visualizer_column_added";
-      event_data: string | null;
       triggered_from: "visualizer-modal";
     }
 >;
 
+export type EmbeddingSetupStepKey =
+  | "welcome"
+  | "user-creation"
+  | "data-connection"
+  | "table-selection"
+  | "processing"
+  | "add-to-your-app"
+  | "done";
+export type EmbeddingSetupStepSeenEvent = ValidateEvent<{
+  event: "embedding_setup_step_seen";
+  event_detail: EmbeddingSetupStepKey;
+}>;
+
+export type EmbeddingSetupClickEvent = ValidateEvent<{
+  event: "embedding_setup_click";
+  event_detail:
+    | "setup-up-manually"
+    | "add-data-later-or-skip"
+    | "snippet-copied"
+    | "ill-do-this-later";
+  triggered_from: EmbeddingSetupStepKey;
+}>;
+
+export type EventsClickedEvent = ValidateEvent<{
+  event: "events_clicked";
+  triggered_from: "chart" | "collection";
+}>;
+
+export type AddDataModalOpenedEvent = ValidateEvent<{
+  event: "data_add_modal_opened";
+  triggered_from: "getting-started" | "left-nav";
+}>;
+
+export type AddDataModalTabEvent = ValidateEvent<{
+  event: "csv_tab_clicked" | "sheets_tab_clicked" | "database_tab_clicked";
+  triggered_from: "add-data-modal";
+}>;
+
+export type DashboardFilterCreatedEvent = ValidateEvent<{
+  event: "dashboard_filter_created";
+  target_id: number | null;
+  triggered_from: VisualizationDisplay | null;
+  event_detail: string | null;
+}>;
+
+export type DashboardFilterMovedEvent = ValidateEvent<{
+  event: "dashboard_filter_moved";
+  target_id: number | null;
+  triggered_from: VisualizationDisplay | null;
+  event_detail: VisualizationDisplay | null;
+}>;
+
+export type SdkIframeEmbedSetupExperience =
+  | "dashboard"
+  | "chart"
+  | "exploration"
+  | "browser";
+
+export type EmbedWizardOpenedEvent = ValidateEvent<{
+  event: "embed_wizard_opened";
+}>;
+
+export type EmbedWizardExperienceCompletedEvent = ValidateEvent<{
+  event: "embed_wizard_experience_completed";
+  event_detail: "default" | `custom=${SdkIframeEmbedSetupExperience}`;
+}>;
+
+export type EmbedWizardResourceSelectionCompletedEvent = ValidateEvent<{
+  event: "embed_wizard_resource_selection_completed";
+  event_detail: "default" | "custom";
+}>;
+
+export type EmbedWizardOptionsCompletedEvent = ValidateEvent<{
+  event: "embed_wizard_options_completed";
+  event_detail: string;
+}>;
+
+export type EmbedWizardCodeCopiedEvent = ValidateEvent<{
+  event: "embed_wizard_code_copied";
+  event_detail: "sso" | "user_session";
+}>;
+
+export type ConnectionStringParsedSuccessEvent = ValidateEvent<{
+  event: "connection_string_parsed_success";
+  triggered_from: "admin" | "setup" | "embedding_setup";
+}>;
+
+export type ConnectionStringParsedFailedEvent = ValidateEvent<{
+  event: "connection_string_parsed_failed";
+  triggered_from: "admin" | "setup" | "embedding_setup";
+}>;
+
+export type EmbedWizardEvent =
+  | EmbedWizardOpenedEvent
+  | EmbedWizardExperienceCompletedEvent
+  | EmbedWizardResourceSelectionCompletedEvent
+  | EmbedWizardOptionsCompletedEvent
+  | EmbedWizardCodeCopiedEvent;
+
+export type MetabotChatOpenedEvent = ValidateEvent<{
+  event: "metabot_chat_opened";
+  triggered_from: "search" | "command_palette" | "keyboard_shortcut";
+}>;
+
+export type MetabotRequestSentEvent = ValidateEvent<{
+  event: "metabot_request_sent";
+}>;
+
+export type MetabotFixQueryClickedEvent = ValidateEvent<{
+  event: "metabot_fix_query_clicked";
+}>;
+
+export type MetabotExplainChartClickedEvent = ValidateEvent<{
+  event: "metabot_explain_chart_clicked";
+}>;
+
+export type MetabotEvent =
+  | MetabotChatOpenedEvent
+  | MetabotRequestSentEvent
+  | MetabotFixQueryClickedEvent
+  | MetabotExplainChartClickedEvent;
+
 export type SimpleEvent =
+  | CustomSMTPSetupClickedEvent
+  | CustomSMTPSetupSuccessEvent
   | CSVUploadClickedEvent
   | DatabaseAddClickedEvent
+  | DatabaseEngineSelectedEvent
   | NewIFrameCardCreatedEvent
   | NewsletterToggleClickedEvent
   | OnboardingChecklistOpenedEvent
@@ -160,4 +302,15 @@ export type SimpleEvent =
   | NewButtonClickedEvent
   | NewButtonItemClickedEvent
   | VisualizeAnotherWayClickedEvent
-  | VisualizerModalEvent;
+  | VisualizerModalEvent
+  | EmbeddingSetupStepSeenEvent
+  | EmbeddingSetupClickEvent
+  | EventsClickedEvent
+  | AddDataModalOpenedEvent
+  | AddDataModalTabEvent
+  | DashboardFilterCreatedEvent
+  | DashboardFilterMovedEvent
+  | EmbedWizardEvent
+  | ConnectionStringParsedSuccessEvent
+  | ConnectionStringParsedFailedEvent
+  | MetabotEvent;

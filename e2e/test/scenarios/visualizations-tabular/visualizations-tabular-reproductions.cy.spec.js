@@ -1,4 +1,6 @@
 const { H } = cy;
+import { chunk } from "underscore";
+
 import { SAMPLE_DB_ID } from "e2e/support/cypress_data";
 import { SAMPLE_DATABASE } from "e2e/support/cypress_sample_database";
 import { ADMIN_USER_ID } from "e2e/support/cypress_sample_instance_data";
@@ -55,7 +57,7 @@ describe("issue 6010", () => {
     cy.wait("@dataset");
 
     cy.findByTestId("qb-filters-panel").within(() => {
-      cy.findByText("Created At is Jan 1–31, 2024").should("be.visible");
+      cy.findByText("Created At: Month is Jan 1–31, 2024").should("be.visible");
     });
     // FIXME metrics v2 -- check that the values in column Total are above 150
   });
@@ -1467,7 +1469,7 @@ WHERE NOT (
   });
 });
 
-describe("issue 55673", () => {
+describe("issue 55673", { tags: "@flaky" }, () => {
   beforeEach(() => {
     H.restore();
     cy.signInAsNormalUser();
@@ -1478,7 +1480,74 @@ describe("issue 55673", () => {
     H.tableHeaderClick("Product ID");
     cy.findByTestId("click-actions-view").should("be.visible");
 
+    cy.focused().should(
+      "have.attr",
+      "data-testid",
+      "click-actions-sort-control-sort.ascending",
+    );
     cy.realPress(["Escape"]);
     cy.findByTestId("click-actions-view").should("not.exist");
+  });
+});
+
+describe("issue 55637", () => {
+  beforeEach(() => {
+    H.restore();
+    cy.signInAsAdmin();
+  });
+
+  it("should not show column metadata popovers when header cell is clicked (metabase#55637)", () => {
+    H.openOrdersTable();
+    H.tableHeaderColumn("ID").realHover();
+    cy.findByTestId("column-info").should("exist");
+
+    H.tableHeaderColumn("ID").click();
+
+    H.tableHeaderColumn("ID").realHover();
+    cy.findByTestId("column-info").should("not.exist");
+
+    H.tableHeaderColumn("Tax").realHover();
+    cy.findByTestId("column-info").should("not.exist");
+  });
+});
+
+describe("issue 63745", () => {
+  beforeEach(() => {
+    H.restore();
+    cy.signInAsAdmin();
+  });
+
+  it("should display correct data when toggling columns (metabase#63745)", () => {
+    H.visitQuestionAdhoc({
+      name: "63745",
+      display: "object",
+      dataset_query: {
+        type: "query",
+        database: SAMPLE_DB_ID,
+        query: {
+          "source-table": ORDERS_ID,
+          limit: 5,
+        },
+      },
+    });
+
+    H.openVizSettingsSidebar();
+    cy.findByTestId("chartsettings-sidebar")
+      .button("Add or remove columns")
+      .click();
+
+    cy.findAllByTestId("object-details-table-cell").should(($cells) => {
+      const cellsFlat = $cells.toArray().map((el) => el.textContent);
+      const map = new Map(chunk(cellsFlat, 2));
+      expect(map.get("User ID")).to.eq("1");
+    });
+
+    cy.findByTestId("orders-table-columns").findByLabelText("ID").click();
+
+    cy.findAllByTestId("object-details-table-cell").should(($cells) => {
+      const cellsFlat = $cells.toArray().map((el) => el.textContent);
+      const map = new Map(chunk(cellsFlat, 2));
+      expect(map.get("User ID")).to.eq("1");
+    });
   });
 });

@@ -48,14 +48,18 @@
  {actions
   {:team "Workflows"
    :api  #{metabase.actions.api
+           metabase.actions.args
            metabase.actions.core
-           metabase.actions.init}
+           metabase.actions.init
+           metabase.actions.types}
    :uses #{analytics
            api
            collections
            driver
+           events
            legacy-mbql
            lib
+           lib-be
            model-persistence
            models
            permissions
@@ -68,7 +72,9 @@
 
   activity-feed
   {:team "Admin Webapp"
-   :api  #{metabase.activity-feed.api metabase.activity-feed.init}
+   :api  #{metabase.activity-feed.api
+           metabase.activity-feed.init
+           metabase.activity-feed.models.recent-views}
    :uses #{api
            app-db
            collections
@@ -105,7 +111,7 @@
            version}}
 
   analyze
-  {:team "Semantic Layer"
+  {:team "Querying"
    :api  #{metabase.analyze.core
            metabase.analyze.query-results}
    :uses #{config
@@ -292,6 +298,7 @@
            models
            premium-features
            settings
+           store-api
            task
            util}}
 
@@ -324,8 +331,10 @@
            audit-app
            config
            driver
+           eid-translation
            events
            legacy-mbql
+           lib-be
            models
            notification
            permissions
@@ -388,6 +397,7 @@
            channel
            collections
            config
+           eid-translation
            embedding
            events
            lib
@@ -487,6 +497,7 @@
            metabase.embedding.init
            metabase.embedding.jwt
            metabase.embedding.settings
+           metabase.embedding.util
            metabase.embedding.validation}
    :uses #{analytics
            api
@@ -501,6 +512,7 @@
            public-sharing
            queries
            query-processor
+           request
            settings
            tiles
            util}}
@@ -573,15 +585,15 @@
           metabase.lib.core
           metabase.lib.equality
           metabase.lib.field
+          metabase.lib.field.resolution
           metabase.lib.filter
-          metabase.lib.ident
           metabase.lib.init
           metabase.lib.join.util
           metabase.lib.metadata
           metabase.lib.metadata.cached-provider
-          metabase.lib.metadata.calculation
           metabase.lib.metadata.invocation-tracker
           metabase.lib.metadata.protocols
+          metabase.lib.metadata.result-metadata
           metabase.lib.normalize
           metabase.lib.options
           metabase.lib.query
@@ -594,9 +606,13 @@
           metabase.lib.schema.expression.window
           metabase.lib.schema.id
           metabase.lib.schema.info
+          metabase.lib.schema.join
           metabase.lib.schema.literal
           metabase.lib.schema.metadata
+          metabase.lib.schema.metadata.fingerprint
+          metabase.lib.schema.order-by
           metabase.lib.schema.parameter
+          metabase.lib.schema.ref
           metabase.lib.schema.template-tag
           metabase.lib.schema.temporal-bucketing
           metabase.lib.schema.util
@@ -755,22 +771,13 @@
   {:team "Admin Webapp"
    :api  #{metabase.permissions.api
            metabase.permissions.core
-           metabase.permissions.init
-           ;; TODO -- move these into the API namespace.
-           metabase.permissions.models.application-permissions-revision
-           metabase.permissions.models.collection-permission-graph-revision
-           metabase.permissions.models.collection.graph
-           metabase.permissions.models.data-permissions
-           metabase.permissions.models.permissions
-           metabase.permissions.models.permissions-group
-           metabase.permissions.path
-           metabase.permissions.util
-           metabase.permissions.validation}
+           metabase.permissions.init}
    :uses #{api
            app-db
            audit-app
            collections
            config
+           events
            models
            premium-features
            request
@@ -885,6 +892,7 @@
            config
            content-verification
            dashboards
+           eid-translation
            embedding
            events
            legacy-mbql
@@ -991,6 +999,7 @@
            metabase.request.init}
    :uses #{api
            config
+           embedding
            permissions                  ; FIXME
            session
            settings
@@ -1007,6 +1016,7 @@
            dashboards
            events
            models
+           queries
            query-permissions
            util}}
 
@@ -1025,9 +1035,11 @@
           metabase.search.appdb.scoring
           metabase.search.config
           metabase.search.core
+          metabase.search.engine
           metabase.search.in-place.scoring
           metabase.search.ingestion
           metabase.search.init
+          metabase.search.scoring
           metabase.search.spec}
    :uses #{analytics
            api
@@ -1167,8 +1179,16 @@
    :api  #{metabase.startup.core}
    :uses #{util}}
 
+  store-api
+  {:team "Cloud"
+   :api  #{metabase.store-api.core
+           metabase.store-api.init}
+   :uses #{config
+           settings
+           util}}
+
   sync
-  {:team "Semantic Layer"
+  {:team "Querying"
    :api #{metabase.sync.api
           metabase.sync.core
           metabase.sync.init
@@ -1253,13 +1273,13 @@
            util}}
 
   types
-  {:team "Semantic Layer"
+  {:team "Querying"
    :api  #{metabase.types.core
            metabase.types.init}
    :uses #{util}}
 
   upload
-  {:team "Semantic Layer"
+  {:team "Querying"
    :api  #{metabase.upload.api
            metabase.upload.core
            metabase.upload.init}
@@ -1292,9 +1312,11 @@
   users
   {:team "Admin Webapp"
    :api  #{metabase.users.api
+           metabase.users.core
            metabase.users.init
            metabase.users.models.user
-           metabase.users.models.user-parameter-value}
+           metabase.users.models.user-parameter-value
+           metabase.users.schema}
    :uses #{analytics
            api
            appearance
@@ -1355,6 +1377,7 @@
            metabase.warehouse-schema.metadata-from-qp
            metabase.warehouse-schema.metadata-queries
            metabase.warehouse-schema.models.field
+           metabase.warehouse-schema.models.field-user-settings
            metabase.warehouse-schema.models.field-values
            metabase.warehouse-schema.models.table
            metabase.warehouse-schema.table}
@@ -1363,6 +1386,7 @@
            api
            app-db
            audit-app
+           database-routing
            driver
            events
            lib
@@ -1435,6 +1459,19 @@
            util
            warehouse-schema}}
 
+  enterprise/action-v2
+  {:team "Workflows"
+   :api  #{metabase-enterprise.action-v2.api
+           metabase-enterprise.action-v2.core
+           metabase-enterprise.action-v2.init}
+   :uses #{actions
+           api
+           driver
+           lib
+           query-processor
+           util
+           warehouse-schema}}
+
   enterprise/advanced-config
   {:team "Admin Webapp"
    :api  #{metabase-enterprise.advanced-config.api.logs
@@ -1500,6 +1537,7 @@
            premium-features
            enterprise/advanced-config
            enterprise/scim
+           enterprise/semantic-search
            enterprise/sso}}
 
   enterprise/api
@@ -1516,6 +1554,7 @@
            app-db
            audit-app
            classloader
+           config
            driver
            lib
            models
@@ -1550,6 +1589,15 @@
            query-processor
            task
            util}}
+
+  enterprise/cloud-add-ons
+  {:team "Cloud"
+   :api  #{metabase-enterprise.cloud-add-ons.api}
+   :uses #{api
+           events
+           premium-features
+           util
+           enterprise/harbormaster}}
 
   enterprise/content-translation
   {:team "Admin Webapp"
@@ -1587,12 +1635,24 @@
            api
            util}}
 
+  enterprise/database-replication
+  {:team "Cloud"
+   :api  #{metabase-enterprise.database-replication.api
+           metabase-enterprise.database-replication.init}
+   :uses #{analytics
+           api
+           premium-features
+           settings
+           util
+           enterprise/harbormaster}}
+
   enterprise/database-routing
   {:team "Admin Webapp"
    :api  #{metabase-enterprise.database-routing.api}
    :uses #{api
            config
            database-routing
+           driver
            events
            lib
            models
@@ -1602,6 +1662,16 @@
            util
            warehouse-schema
            warehouses}}
+
+  enterprise/email
+  {:team "Admin Webapp"
+   :api  #{metabase-enterprise.email.api}
+   :uses #{api
+           channel
+           permissions
+           premium-features
+           settings
+           util}}
 
   enterprise/gsheets
   {:team  "Cloud"
@@ -1618,7 +1688,7 @@
   {:team "Cloud"
    :api  #{metabase-enterprise.harbormaster.client}
    :uses #{api
-           cloud-migration
+           store-api
            util}}
 
   enterprise/impersonation
@@ -1644,7 +1714,8 @@
   enterprise/llm
   {:team "Metabot"
    :api  #{metabase-enterprise.llm.api
-           metabase-enterprise.llm.init}
+           metabase-enterprise.llm.init
+           metabase-enterprise.llm.settings}
    :uses #{analytics
            analyze
            api
@@ -1656,13 +1727,16 @@
   enterprise/metabot-v3
   {:team "Metabot"
    :api #{metabase-enterprise.metabot-v3.api
+          metabase-enterprise.metabot-v3.client
           metabase-enterprise.metabot-v3.core
           metabase-enterprise.metabot-v3.init
           metabase-enterprise.metabot-v3.tools.api}
    :uses #{api
            app-db
+           audit-app
            collections
            config
+           driver
            legacy-mbql
            lib
            lib-be
@@ -1672,11 +1746,26 @@
            pulse
            query-processor
            request
+           search
+           server
            settings
+           store-api
+           sync
            system
+           task
            users
            util
            warehouse-schema}}
+
+  enterprise/permission-debug
+  {:team "Admin Webapp"
+   :api #{metabase-enterprise.permission-debug.api}
+   :uses #{api
+           lib
+           models
+           permissions
+           query-processor
+           util}}
 
   enterprise/premium-features
   {:team "Admin Webapp"
@@ -1730,6 +1819,27 @@
    :uses #{premium-features
            search}}
 
+  enterprise/semantic-search
+  {:team "Metabot"
+   :api  #{metabase-enterprise.semantic-search.api
+           metabase-enterprise.semantic-search.core
+           metabase-enterprise.semantic-search.init}
+   :uses #{activity-feed
+           analytics
+           api
+           app-db
+           config
+           connection-pool
+           models
+           permissions
+           premium-features
+           search
+           settings
+           task
+           util
+           enterprise/llm
+           enterprise/metabot-v3}}
+
   enterprise/serialization
   {:team "Workflows"
    :api #{metabase-enterprise.serialization.api
@@ -1747,6 +1857,7 @@
            models
            plugins
            premium-features
+           search
            settings
            setup
            util

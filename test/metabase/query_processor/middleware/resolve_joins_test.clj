@@ -1,10 +1,14 @@
 (ns metabase.query-processor.middleware.resolve-joins-test
   (:require
    [clojure.test :refer :all]
+   [metabase.lib.core :as lib]
+   [metabase.lib.metadata :as lib.metadata]
    [metabase.lib.test-metadata :as meta]
    [metabase.lib.test-util :as lib.tu]
+   [metabase.lib.test-util.macros :as lib.tu.macros]
    [metabase.query-processor :as qp]
    [metabase.query-processor.middleware.resolve-joins :as resolve-joins]
+   [metabase.query-processor.preprocess :as qp.preprocess]
    [metabase.query-processor.store :as qp.store]
    [metabase.test :as mt]))
 
@@ -15,10 +19,20 @@
       (resolve-joins/resolve-joins query))))
 
 (deftest ^:parallel joins->fields-test
-  (is (= [1 2 3 4]
-         (#'resolve-joins/joins->fields [{:fields :all}
-                                         {:fields [1 2]}
-                                         {:fields [3 4]}]))))
+  (is (=? [[:field 1 {:qp/ignore-coercion true}]
+           [:field 2 {:qp/ignore-coercion true}]
+           [:field 3 {:qp/ignore-coercion true}]
+           [:field 4 {:qp/ignore-coercion true}]]
+          (#'resolve-joins/joins->fields [{:alias "A"
+                                           :fields :all}
+                                          {:alias "B"
+                                           :fields [[:field 1 {:join-alias "B"}]
+                                                    ;; missing join alias
+                                                    [:field 2 nil]]}
+                                          {:alias "C"
+                                           :fields [[:field 3 {:join-alias "C"}]
+                                                    ;; wrong join alias
+                                                    [:field 4 {:join-alias "X"}]]}]))))
 
 (deftest ^:parallel no-op-test
   (testing "Does the middleware function if the query has no joins?"
@@ -53,8 +67,10 @@
                                     &c.categories.name]}]
                    :fields [$venues.id
                             $venues.name
-                            &c.categories.id
-                            &c.categories.name]})
+                            [:field %categories.id {:join-alias         "c"
+                                                    :qp/ignore-coercion true}]
+                            [:field %categories.name {:join-alias         "c"
+                                                      :qp/ignore-coercion true}]]})
                 (resolve-joins
                  (mt/mbql-query venues
                    {:fields [$venues.id $venues.name]
@@ -74,7 +90,8 @@
                      :fields       [&c.categories.name]}]
                    :fields [$venues.id
                             $venues.name
-                            &c.categories.name]})
+                            [:field %categories.name {:join-alias         "c"
+                                                      :qp/ignore-coercion true}]]})
                 (resolve-joins
                  (mt/mbql-query venues
                    {:fields [$venues.id $venues.name]
@@ -91,7 +108,7 @@
                                :strategy     :left-join
                                :condition    [:= $category_id 1]}
                               {:source-table $$categories
-                               :alias        "__join"
+                               :alias        "__join_2"
                                :strategy     :left-join
                                :condition    [:= $category_id 2]}]
                :source-table (mt/id :venues)})
@@ -191,8 +208,8 @@
                               :order-by [[:asc $name]]
                               :limit    3}))]
       (is (query= (mt/mbql-query venues
-                    {:fields   [[:field (mt/id :categories :id) {:join-alias "cat"}]
-                                [:field (mt/id :categories :name) {:join-alias "cat"}]]
+                    {:fields   [[:field (mt/id :categories :id)   {:join-alias "cat", :qp/ignore-coercion true}]
+                                [:field (mt/id :categories :name) {:join-alias "cat", :qp/ignore-coercion true}]]
                      :joins    [{:alias           "cat"
                                  :source-query    {:source-table $$categories}
                                  :source-metadata source-metadata
@@ -266,7 +283,9 @@
                             :fingerprint   {:global {:distinct-count 15, :nil% 0.0}}}]]
       (is (query= (mt/mbql-query users
                     {:fields [$id
-                              [:field "_USER_ID" {:base-type :type/Integer :join-alias "alias"}]]
+                              [:field "_USER_ID" {:base-type          :type/Integer
+                                                  :join-alias         "alias"
+                                                  :qp/ignore-coercion true}]]
                      :joins  [{:fields       [[:field "_USER_ID" {:base-type :type/Integer :join-alias "alias"}]]
                                :alias        "alias"
                                :strategy     :left-join
@@ -315,3 +334,88 @@
                              $venues.price]
                   :order-by [[:asc $venues.name]]
                   :limit    3})))))
+
+(deftest ^:parallel do-not-duplicate-columns-with-default-temporal-bucketing-test
+  (testing "Do not add a duplicate column from a join if it uses :default temporal bucketing"
+    (let [original-query {:fields [[:field (meta/id :orders :id) nil]
+                                   [:field (meta/id :people :birth-date) {:join-alias "P", :temporal-unit :default}]]}]
+      (doseq [temporal-unit           [nil :default]
+              base-type               [nil :type/Date]
+              effective-type          [nil :type/Date]
+              inherited-temporal-unit [nil :default]
+              ;; make sure random keys don't affect this either
+              nonsense-key            [nil 1337]
+              lib-key                 [nil "PRODUCTS"]
+              :let                    [opts (cond-> {:join-alias "P"}
+                                              temporal-unit           (assoc :temporal-unit temporal-unit)
+                                              base-type               (assoc :base-type base-type)
+                                              effective-type          (assoc :effective-type effective-type)
+                                              inherited-temporal-unit (assoc :inherited-temporal-unit inherited-temporal-unit)
+                                              nonsense-key            (assoc :nonsense-key nonsense-key)
+                                              lib-key                 (assoc :lib/nonsense-key lib-key))
+                                       clause [:field (meta/id :people :birth-date) opts]]]
+        (testing (pr-str clause)
+          (is (= original-query
+                 (resolve-joins/append-join-fields-to-fields
+                  original-query
+                  [clause]))))))))
+
+(deftest ^:parallel do-not-duplicate-columns-with-default-temporal-bucketing-e2e-test
+  (testing "Do not add a duplicate column from a join if it uses :default temporal bucketing"
+    (let [mp    (lib.tu/mock-metadata-provider
+                 meta/metadata-provider
+                 {:cards [{:id            1
+                           :database-id   (meta/id)
+                           :name          "QB Binning"
+                           :dataset-query (lib.tu.macros/mbql-query orders
+                                            {:joins  [{:source-table (meta/id :people)
+                                                       :alias        "People"
+                                                       :condition    [:=
+                                                                      $user-id
+                                                                      &People.people.id]
+                                                       :fields       [&People.people.longitude
+                                                                      &People.!default.people.birth-date]}
+                                                      {:source-table (meta/id :products)
+                                                       :alias        "Products"
+                                                       :condition    [:=
+                                                                      $product-id
+                                                                      &Products.products.id]
+                                                       :fields       [&Products.products.price]}]
+                                             :fields [$id]})}]})
+          query (lib/query mp (lib.metadata/card mp 1))]
+      (is (=? (lib.tu.macros/$ids orders
+                [$id
+                 &People.people.longitude
+                 ;; the `:default` temporal unit gets removed somewhere
+                 &People.people.birth-date
+                 &Products.products.price])
+              (-> (qp.preprocess/preprocess query) :query :fields))))))
+
+;;; adapted from [[metabase.query-processor-test.explicit-joins-test/join-against-saved-question-with-sort-test]]
+(deftest ^:parallel join-against-same-table-returned-columns-test
+  (testing "Joining against a query that ultimately have the same source table SHOULD result in 'duplicate' columns being included."
+    (let [query (lib/query
+                 meta/metadata-provider
+                 (lib.tu.macros/mbql-query products
+                   {:joins    [{:source-query {:source-table $$products
+                                               :aggregation  [[:count]]
+                                               :breakout     [$category]
+                                               :order-by     [[:asc [:aggregation 0]]]}
+                                :alias        "Q1"
+                                :condition    [:= $category [:field %category {:join-alias "Q1"}]]
+                                :fields       :all}]
+                    :order-by [[:asc $id]]
+                    :limit    1}))]
+      (is (= [;; these 8 are from PRODUCTS
+              "ID"
+              "Ean"
+              "Title"
+              "Category"
+              "Vendor"
+              "Price"
+              "Rating"
+              "Created At"
+              ;; the next 2 are from PRODUCTS
+              "Q1 → Category"
+              "Q1 → Count"]
+             (map :display_name (qp.preprocess/query->expected-cols query)))))))

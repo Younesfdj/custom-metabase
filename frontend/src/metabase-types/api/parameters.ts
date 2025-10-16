@@ -52,7 +52,6 @@ export interface Parameter extends ParameterValuesConfig {
   required?: boolean;
   options?: ParameterOptions;
   filteringParameters?: ParameterId[];
-  isMultiSelect?: boolean;
   value?: any;
   target?: ParameterTarget;
   temporal_units?: TemporalUnit[];
@@ -63,6 +62,7 @@ export interface ParameterValuesConfig {
   values_source_type?: ValuesSourceType;
   values_source_config?: ValuesSourceConfig;
   temporal_units?: TemporalUnit[];
+  isMultiSelect?: boolean;
 }
 
 export type ValuesQueryType = "list" | "search" | "none";
@@ -104,7 +104,7 @@ export type ParameterValueOrArray =
   | string
   | number
   | boolean
-  | Array<string | number | boolean>;
+  | Array<string | number | boolean | null>;
 
 export type HumanReadableParameterValue = string;
 export type NotRemappedParameterValue = [RowValue];

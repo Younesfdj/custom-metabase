@@ -792,7 +792,7 @@
            {:delete-from (t2/table-name model)
             :where       [:and max-id-condition additional-conditions]}))
         ;; TODO we don't (currently) have index update hooks on deletes, so we need this to ensure rollback happens.
-        (search/reindex! {:in-place? true})))))
+        (search/reindex! {:in-place? true :async? false})))))
 
 (defmacro with-model-cleanup
   "Execute `body`, then delete any *new* rows created for each model in `models`. Calls `delete!`, so if the model has
@@ -833,31 +833,30 @@
           (testing "Shouldn't delete other Cards"
             (is (pos? (t2/count :model/Card)))))))))
 
-(defn do-with-verified-cards!
-  "Impl for [[with-verified-cards!]]."
-  [card-or-ids thunk]
+(defn do-with-verified!
+  "Impl for [[with-verified!]]."
+  [cards-or-dashes thunk]
   (with-model-cleanup [:model/ModerationReview]
-    (doseq [card-or-id card-or-ids]
+    (doseq [[item-type model-or-ids] cards-or-dashes
+            model-or-id              model-or-ids]
       (doseq [status ["verified" nil "verified"]]
         ;; create multiple moderation review for a card, but the end result is it's still verified
         (moderation-review/create-review!
-         {:moderated_item_id   (u/the-id card-or-id)
-          :moderated_item_type "card"
+         {:moderated_item_id   (u/the-id model-or-id)
+          :moderated_item_type (name item-type)
           :moderator_id        ((requiring-resolve 'metabase.test.data.users/user->id) :rasta)
           :status              status})))
     (thunk)))
 
-(defmacro with-verified-cards!
+(defmacro with-verified!
   "Execute the body with all `card-or-ids` verified."
-  [card-or-ids & body]
-  `(do-with-verified-cards! ~card-or-ids (fn [] ~@body)))
+  [cards-or-dashes & body]
+  `(do-with-verified! ~cards-or-dashes (fn [] ~@body)))
 
-(deftest with-verified-cards-test
-  #_{:clj-kondo/ignore [:discouraged-var]}
-  (t2.with-temp/with-temp
-    [:model/Card {card-id :id} {}]
-    (with-verified-cards! [card-id]
-      (is (=? #{{:moderated_item_id   card-id
+(deftest with-verified-test
+  (t2.with-temp/with-temp [:model/Card {card-id :id} {}]
+    (with-verified! {:card [card-id]}
+      (is (=? #{{:moderated_item_id card-id
                  :moderated_item_type :card
                  :most_recent         true
                  :status              "verified"}
@@ -1016,6 +1015,7 @@
         (is (= count-aux-method-before
                (set (methodical/aux-methods t2.before-update/before-update :model/Card :before))))))))
 
+;;; TODO (Cam 6/17/25) -- these should have an `!` after them
 (defn do-with-non-admin-groups-no-collection-perms [collection f]
   (mb.hawk.parallel/assert-test-is-not-parallel "with-non-admin-groups-no-collection-perms")
   (try
@@ -1113,7 +1113,7 @@
     :else
     x))
 
-(defn call-with-locale
+(defn call-with-locale!
   "Sets the default locale temporarily to `locale-tag`, then invokes `f` and reverts the locale change"
   [locale-tag f]
   (mb.hawk.parallel/assert-test-is-not-parallel "with-locale")
@@ -1124,10 +1124,10 @@
       (finally
         (Locale/setDefault current-locale)))))
 
-(defmacro with-locale
+(defmacro with-locale!
   "Allows a test to override the locale temporarily"
   [locale-tag & body]
-  `(call-with-locale ~locale-tag (fn [] ~@body)))
+  `(call-with-locale! ~locale-tag (fn [] ~@body)))
 
 ;;; TODO -- this could be made thread-safe if we made [[with-temp-vals-in-db]] thread-safe which I think is pretty
 ;;; doable (just do it in a transaction?)
@@ -1536,7 +1536,7 @@
   `(fn [{:keys ~(mapv (comp symbol name) bindings)}]
      ~@body))
 
-(defn do-poll-until [^Long timeout-ms thunk]
+(defn do-poll-until [^Long timeout-ms code thunk]
   (let [result-prom (promise)
         _timeouter (future (Thread/sleep timeout-ms) (deliver result-prom ::timeout))
         _runner (future (loop []
@@ -1545,7 +1545,8 @@
                             (recur))))
         result @result-prom]
     (cond (= result ::timeout) (throw (ex-info (str "Timeout after " timeout-ms "ms")
-                                               {:timeout-ms timeout-ms}))
+                                               {:timeout-ms timeout-ms
+                                                :code code}))
           (instance? Throwable result) (throw result)
           :else result)))
 
@@ -1559,6 +1560,7 @@
   [timeout-ms & body]
   `(do-poll-until
     ~timeout-ms
+    '~@body
     (fn ~'poll-body [] ~@body)))
 
 (methodical/defmethod =?/=?-diff [(Class/forName "[B") (Class/forName "[B")]

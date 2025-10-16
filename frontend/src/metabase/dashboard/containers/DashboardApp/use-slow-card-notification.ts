@@ -1,11 +1,11 @@
 import { useCallback, useEffect } from "react";
 import { t } from "ttag";
 
+import { useLoadingTimer } from "metabase/common/hooks/use-loading-timer";
+import { useUniqueId } from "metabase/common/hooks/use-unique-id";
+import { useWebNotification } from "metabase/common/hooks/use-web-notification";
 import { DASHBOARD_SLOW_TIMEOUT } from "metabase/dashboard/constants";
 import { useDashboardContext } from "metabase/dashboard/context";
-import { useLoadingTimer } from "metabase/hooks/use-loading-timer";
-import { useUniqueId } from "metabase/hooks/use-unique-id";
-import { useWebNotification } from "metabase/hooks/use-web-notification";
 import { useDispatch } from "metabase/lib/redux";
 import { addUndo, dismissUndo } from "metabase/redux/undo";
 
@@ -54,9 +54,9 @@ export const useSlowCardNotification = () => {
         addUndo({
           id: slowToastId,
           timeout: false,
-          message: t`Would you like to be notified when this dashboard is done loading?`,
+          message: t`Want to get notified when this dashboard loads?`,
           action: onConfirmToast,
-          actionLabel: t`Turn on`,
+          actionLabel: t`Notify me`,
         }),
       );
     }

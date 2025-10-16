@@ -8,8 +8,8 @@ import {
   useListDatabaseXraysQuery,
   useListDatabasesQuery,
 } from "metabase/api";
-import { LoadingAndErrorWrapper } from "metabase/components/LoadingAndErrorWrapper";
-import Select from "metabase/core/components/Select";
+import { LoadingAndErrorWrapper } from "metabase/common/components/LoadingAndErrorWrapper";
+import Select from "metabase/common/components/Select";
 import { useSelector } from "metabase/lib/redux";
 import { isSyncCompleted } from "metabase/lib/syncing";
 import * as Urls from "metabase/lib/urls";
@@ -71,6 +71,7 @@ const HomeXrayView = ({ database, candidates = [] }: HomeXrayViewProps) => {
   const tableMessages = useMemo(() => getMessages(tableCount), [tableCount]);
   const canSelectSchema = schemas.length > 1;
   const applicationName = useSelector(getApplicationName);
+  const hasTables = (candidate?.tables.length ?? 0) > 0;
 
   return (
     <div>
@@ -89,12 +90,12 @@ const HomeXrayView = ({ database, candidates = [] }: HomeXrayViewProps) => {
           {t`schema in`}
           <DatabaseInfo database={database} />
         </HomeCaption>
-      ) : (
+      ) : hasTables ? (
         <HomeCaption primary>
           {t`Here are some explorations of`}
           <DatabaseInfo database={database} />
         </HomeCaption>
-      )}
+      ) : null}
       <SectionBody>
         {candidate?.tables.map((table, index) => (
           <HomeXrayCard

@@ -16,8 +16,7 @@
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
-   [metabase.driver.sql.parameters.substitution
-    :as sql.params.substitution]
+   [metabase.driver.sql.parameters.substitution :as sql.params.substitution]
    [metabase.driver.sql.query-processor :as sql.qp]
    [metabase.driver.sql.query-processor.boolean-to-comparison :as sql.qp.boolean-to-comparison]
    [metabase.driver.sql.util :as sql.u]
@@ -25,18 +24,8 @@
    [metabase.util.honey-sql-2 :as h2x]
    [metabase.util.log :as log])
   (:import
-   (java.sql
-    Connection
-    PreparedStatement
-    ResultSet
-    Time)
-   (java.time
-    LocalDate
-    LocalDateTime
-    LocalTime
-    OffsetDateTime
-    OffsetTime
-    ZonedDateTime)
+   (java.sql Connection PreparedStatement ResultSet Time)
+   (java.time LocalDate LocalDateTime LocalTime OffsetDateTime OffsetTime ZonedDateTime)
    (java.time.format DateTimeFormatter)
    [java.util UUID]))
 
@@ -46,6 +35,7 @@
 
 (doseq [[feature supported?] {:case-sensitivity-string-filter-options false
                               :connection-impersonation               true
+                              :connection-impersonation-requires-role true
                               :uuid-type                              true
                               :convert-timezone                       true
                               :datetime-diff                          true
@@ -54,12 +44,9 @@
                               :index-info                             false
                               :now                                    true
                               :regex                                  false
-                              :test/jvm-timezone-setting              false}]
+                              :test/jvm-timezone-setting              false
+                              :jdbc/statements                        false}]
   (defmethod driver/database-supports? [:sqlserver feature] [_driver _feature _db] supported?))
-
-(defmethod driver/database-supports? [:sqlserver :connection-impersonation-requires-role]
-  [_driver _feature db]
-  (= (u/lower-case-en (-> db :details :user)) "sa"))
 
 (defmethod driver/database-supports? [:sqlserver :percentile-aggregations]
   [_ _ db]
@@ -317,12 +304,60 @@
   [_ hsql-form amount unit]
   (date-add unit amount hsql-form))
 
+;; The second argument to DATEADD() gets casted to a 32-bit integer. BIGINT is 64 bites, so we tend to run into
+;; integer overflow errors (especially for millisecond timestamps).
+;; Work around this by converting the timestamps to minutes instead before calling DATEADD().
+;;
+;; NOTE: In SQL Server 2025 (17.x) + this is no longer
+;; true (https://learn.microsoft.com/en-us/sql/t-sql/functions/dateadd-transact-sql?view=sql-server-ver17):
+;;
+;; > In SQL Server 2025 (17.x) Preview, Azure SQL Database, Azure SQL Managed Instance and SQL database in Microsoft
+;; > Fabric Preview, number can be expressed as a bigint. This feature is in preview.
+
+(defn- supports-bigint-date-add? []
+  (some-> (driver-api/metadata-provider)
+          driver-api/database
+          :dbms-version
+          :semantic-version
+          first
+          (>= 17)))
+
+(def ^:private nineteen-seventy (h2x/cast :datetime2 (h2x/literal "1970-01-01 00:00:00.000")))
+
+(defn- unix-timestamp->honeysql [expr unit num-per-minute]
+  (if (supports-bigint-date-add?)
+    (date-add unit expr nineteen-seventy)
+    (->> nineteen-seventy
+         (date-add :minute (h2x// expr num-per-minute))
+         (date-add unit (h2x/mod expr num-per-minute)))))
+
 (defmethod sql.qp/unix-timestamp->honeysql [:sqlserver :seconds]
-  [_ _ expr]
-  ;; The second argument to DATEADD() gets casted to a 32-bit integer. BIGINT is 64 bites, so we tend to run into
-  ;; integer overflow errors (especially for millisecond timestamps).
-  ;; Work around this by converting the timestamps to minutes instead before calling DATEADD().
-  (date-add :minute (h2x// expr 60) (h2x/literal "1970-01-01")))
+  [_driver _precision expr]
+  (unix-timestamp->honeysql expr :second 60))
+
+(defmethod sql.qp/unix-timestamp->honeysql [:sqlserver :milliseconds]
+  [_driver _precision expr]
+  (unix-timestamp->honeysql expr :millisecond (* 60 1000)))
+
+(defmethod sql.qp/unix-timestamp->honeysql [:sqlserver :microseconds]
+  [_driver _precision expr]
+  (unix-timestamp->honeysql expr :microsecond (* 60 1000 1000)))
+
+;;; 60 ✕ 10^9 is still larger than `Integer/MAX_VALUE` (i.e., the max value for a 32-bit integer) so it STILL results
+;;; in integer overflows even if we modulo by the number per minute... we actually have to split this up into three
+;;; parts to avoid the overflow.
+(defmethod sql.qp/unix-timestamp->honeysql [:sqlserver :nanoseconds]
+  [_driver _precision expr]
+  (if (supports-bigint-date-add?)
+    (date-add :nanosecond expr nineteen-seventy)
+    (let [num-per-minute (* 60 1000 1000 1000)
+          num-per-second (* 1000 1000 1000)]
+      (->> nineteen-seventy
+           (date-add :minute (h2x// expr num-per-minute))
+           (date-add :second (-> expr
+                                 (h2x/mod num-per-minute)
+                                 (h2x// num-per-second)))
+           (date-add :nanosecond (h2x/mod expr num-per-second))))))
 
 (defmethod sql.qp/float-dbtype :sqlserver
   [_]
@@ -775,21 +810,16 @@
                  (in-source-query? path)))]
     (driver-api/replace inner-query
       ;; remove order by and then recurse in case we need to do more tranformations at another level
-                        (m :guard (partial remove-order-by? &parents))
-                        (fix-order-bys (dissoc m :order-by))
+      (m :guard (partial remove-order-by? &parents))
+      (fix-order-bys (dissoc m :order-by))
 
-                        (m :guard (partial add-limit? &parents))
-                        (fix-order-bys (assoc m :limit driver-api/absolute-max-results)))))
+      (m :guard (partial add-limit? &parents))
+      (fix-order-bys (assoc m :limit driver-api/absolute-max-results)))))
 
 (defmethod sql.qp/preprocess :sqlserver
   [driver inner-query]
   (let [parent-method (get-method sql.qp/preprocess :sql)]
     (fix-order-bys (parent-method driver inner-query))))
-
-;; In order to support certain native queries that might return results at the end, we have to use only prepared
-;; statements (see #9940)
-(defmethod sql-jdbc.execute/statement-supported? :sqlserver [_]
-  false)
 
 ;; SQL server only supports setting holdability at the connection level, not the statement level, as per
 ;; https://docs.microsoft.com/en-us/sql/connect/jdbc/using-holdability?view=sql-server-ver15
@@ -923,10 +953,11 @@
 
 (defmethod driver.sql/default-database-role :sqlserver
   [_driver database]
-  ;; Use a "role" (sqlserver user) if it exists, otherwise use
-  ;; the user if it can be impersonated (ie not the 'sa' user).
-  (let [{:keys [role user]} (:details database)]
-    (or role (when-not (= (u/lower-case-en user) "sa") user))))
+  ;; Use a "role" (sqlserver user) if it exists. Do not fall back to the user
+  ;; field automatically, as it represents the login user which may not be a
+  ;; valid database user for impersonation (see issue #60665).
+  (let [{:keys [role]} (:details database)]
+    role))
 
 (defmethod driver.sql/set-role-statement :sqlserver
   [_driver role]

@@ -21,7 +21,7 @@ describe("scenarios > embedding-sdk > static-dashboard", () => {
   beforeEach(() => {
     H.restore();
     cy.signIn("admin", { skipCache: true });
-    H.setTokenFeatures("all");
+    H.activateToken("pro-self-hosted");
     enableJwtAuth();
 
     const textCard = H.getTextCardDetails({ col: 16, text: "Text text card" });
@@ -83,7 +83,7 @@ describe("scenarios > embedding-sdk > static-dashboard", () => {
 
     getSdkRoot().within(() => {
       cy.findByText(
-        "Unable to connect to instance at http://localhost:4000",
+        "Embedding SDK for React is disabled. Enable it in the embedding settings.",
       ).should("be.visible");
     });
   });

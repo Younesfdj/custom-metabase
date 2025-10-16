@@ -1,6 +1,16 @@
-import { createContext, useCallback, useContext, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 
-import type { DatabaseData, Table } from "metabase-types/api";
+import { trackSimpleEvent } from "metabase/lib/analytics";
+import { useSelector } from "metabase/lib/redux";
+import { getLocale } from "metabase/setup/selectors";
+import type { EmbeddingSetupClickEvent } from "metabase-types/analytics";
+import type { Dashboard, DatabaseData, Table } from "metabase-types/api";
 
 import { DataConnectionStep } from "./steps/DataConnectionStep";
 import { DoneStep } from "./steps/DoneStep";
@@ -9,9 +19,11 @@ import { ProcessingStep } from "./steps/ProcessingStep";
 import { TableSelectionStep } from "./steps/TableSelectionStep";
 import { UserCreationStep } from "./steps/UserCreationStep";
 import { WelcomeStep } from "./steps/WelcomeStep";
-import type { StepDefinition } from "./steps/embeddingSetupSteps";
+import type {
+  EmbeddingSetupStepKey,
+  StepDefinition,
+} from "./steps/embeddingSetupSteps";
 import { STEPS, getStepIndexByKey } from "./steps/embeddingSetupSteps";
-import { useForceLocaleRefresh } from "./useForceLocaleRefresh";
 
 export const STEP_COMPONENTS = [
   WelcomeStep,
@@ -32,15 +44,18 @@ type EmbeddingSetupContextType = {
   setError: (error: string) => void;
   selectedTables: Table[];
   setSelectedTables: (tables: Table[]) => void;
-  createdDashboardIds: number[];
-  setCreatedDashboardIds: (ids: number[]) => void;
-  stepKey: string;
-  goToStep: (key: string) => void;
+  createdDashboard2: Dashboard[];
+  setCreatedDashboard: (dashboards: Dashboard[]) => void;
+  stepKey: EmbeddingSetupStepKey;
+  goToStep: (key: EmbeddingSetupStepKey) => void;
   steps: StepDefinition[];
   stepIndex: number;
   totalSteps: number;
   goToNextStep: () => void;
   StepComponent: (typeof STEP_COMPONENTS)[number];
+  trackEmbeddingSetupClick: (
+    eventDetail: EmbeddingSetupClickEvent["event_detail"],
+  ) => void;
 };
 
 const EmbeddingSetupContext = createContext<EmbeddingSetupContextType | null>(
@@ -48,7 +63,10 @@ const EmbeddingSetupContext = createContext<EmbeddingSetupContextType | null>(
 );
 
 export const useEmbeddingSetup = () => {
-  useForceLocaleRefresh();
+  // This forces the components where it's used to re-render, making `t` use the new locale
+  // This is needed because we allow changing the locale from the sidebar, without this trick
+  // the components on the page wouldn't re-render with the new locale
+  useSelector(getLocale);
 
   const context = useContext(EmbeddingSetupContext);
 
@@ -69,8 +87,8 @@ export const EmbeddingSetupProvider = ({
   const [processingStatus, setProcessingStatus] = useState("");
   const [error, setError] = useState("");
   const [selectedTables, setSelectedTables] = useState<Table[]>([]);
-  const [createdDashboardIds, setCreatedDashboardIds] = useState<number[]>([]);
-  const [stepKey, goToStep] = useState(STEPS[0].key);
+  const [createdDashboard2, setCreatedDashboard] = useState<Dashboard[]>([]);
+  const [stepKey, goToStep] = useState<EmbeddingSetupStepKey>(STEPS[0].key);
 
   const stepIndex = getStepIndexByKey(stepKey);
   const totalSteps = STEP_COMPONENTS.length;
@@ -83,6 +101,24 @@ export const EmbeddingSetupProvider = ({
     }
   }, [stepIndex, goToStep]);
 
+  useEffect(() => {
+    trackSimpleEvent({
+      event: "embedding_setup_step_seen",
+      event_detail: stepKey,
+    });
+  }, [stepKey]);
+
+  const trackEmbeddingSetupClick = useCallback(
+    (eventDetail: EmbeddingSetupClickEvent["event_detail"]) => {
+      trackSimpleEvent({
+        event: "embedding_setup_click",
+        event_detail: eventDetail,
+        triggered_from: stepKey,
+      });
+    },
+    [stepKey],
+  );
+
   return (
     <EmbeddingSetupContext.Provider
       value={{
@@ -94,8 +130,8 @@ export const EmbeddingSetupProvider = ({
         setError,
         selectedTables,
         setSelectedTables,
-        createdDashboardIds,
-        setCreatedDashboardIds,
+        createdDashboard2,
+        setCreatedDashboard,
         stepKey,
         goToStep,
         steps: STEPS,
@@ -103,6 +139,7 @@ export const EmbeddingSetupProvider = ({
         totalSteps,
         goToNextStep,
         StepComponent,
+        trackEmbeddingSetupClick,
       }}
     >
       {children}

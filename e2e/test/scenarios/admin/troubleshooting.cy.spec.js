@@ -4,37 +4,19 @@ import { createMockTask } from "metabase-types/api/mocks";
 
 const { H } = cy;
 
-describe("scenarios > admin > troubleshooting > help", () => {
+describe("scenarios > admin > tools > help", { tags: "@OSS" }, () => {
   beforeEach(() => {
     H.restore();
     cy.signInAsAdmin();
   });
 
-  // Unskip when mocking Cloud in Cypress is fixed (#18289)
-  it.skip("should add the support link when running Metabase Cloud", () => {
-    H.setupMetabaseCloud();
-    cy.visit("/admin/troubleshooting/help");
+  it("should link `Get help` to help", () => {
+    cy.visit("/admin/tools/help");
 
     // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
     cy.findByText("Metabase Admin");
     // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("Contact support");
-  });
-});
-
-describe("scenarios > admin > troubleshooting > help", { tags: "@OSS" }, () => {
-  beforeEach(() => {
-    H.restore();
-    cy.signInAsAdmin();
-  });
-
-  it("should link `Get Help` to help", () => {
-    cy.visit("/admin/troubleshooting/help");
-
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("Metabase Admin");
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("Get Help")
+    cy.findByText("Get help")
       .parents("a")
       .should("have.prop", "href")
       .and(
@@ -44,20 +26,18 @@ describe("scenarios > admin > troubleshooting > help", { tags: "@OSS" }, () => {
   });
 });
 
-describe("scenarios > admin > troubleshooting > help (EE)", () => {
+describe("scenarios > admin > tools > help (EE)", () => {
   beforeEach(() => {
     H.restore();
     cy.signInAsAdmin();
-    H.setTokenFeatures("all");
+    H.activateToken("pro-self-hosted");
   });
 
   it("should link `Get Help` to help-premium", () => {
-    cy.visit("/admin/troubleshooting/help");
+    cy.visit("/admin/tools/help");
 
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("Metabase Admin");
-    // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-    cy.findByText("Get Help")
+    cy.findByTestId("admin-layout-content")
+      .findByText("Get help")
       .parents("a")
       .should("have.prop", "href")
       .and(
@@ -151,7 +131,7 @@ describe("issue 14636", () => {
   });
 
   it("pagination should work (metabase#14636)", () => {
-    cy.visit("/admin/troubleshooting/tasks");
+    cy.visit("/admin/tools/tasks");
     cy.wait("@first");
 
     cy.location("search").should("eq", "");
@@ -193,14 +173,14 @@ describe("issue 14636", () => {
 
     cy.log("pagination should affect browser history");
     cy.go("back");
-    cy.location("pathname").should("eq", "/admin/troubleshooting/tasks");
+    cy.location("pathname").should("eq", "/admin/tools/tasks");
     cy.location("search").should("eq", "?page=1");
     cy.go("back");
-    cy.location("pathname").should("eq", "/admin/troubleshooting/tasks");
+    cy.location("pathname").should("eq", "/admin/tools/tasks");
     cy.location("search").should("eq", "");
 
     cy.log("it should respect page query param on page load");
-    cy.visit("/admin/troubleshooting/tasks?page=1");
+    cy.visit("/admin/tools/tasks?page=1");
     cy.wait("@second");
 
     cy.findByLabelText("pagination")
@@ -209,9 +189,7 @@ describe("issue 14636", () => {
   });
 
   it("filtering should work", () => {
-    cy.visit(
-      "/admin/troubleshooting/tasks?status=success&task=field+values+scanning",
-    );
+    cy.visit("/admin/tools/tasks?status=success&task=field+values+scanning");
 
     cy.findByPlaceholderText("Filter by task").should(
       "have.value",
@@ -261,19 +239,19 @@ describe("issue 14636", () => {
     cy.findByLabelText("pagination").findByText("1 - 50").should("be.visible");
 
     cy.log("should reset pagination when changing filters");
-    cy.visit("/admin/troubleshooting/tasks?page=1");
+    cy.visit("/admin/tools/tasks?page=1");
     cy.findByPlaceholderText("Filter by status").click();
     H.popover().findByText("Success").click();
     cy.location("search").should("eq", "?status=success");
 
     cy.log("should remove invalid query params");
-    cy.visit("/admin/troubleshooting/tasks?status=foobar");
+    cy.visit("/admin/tools/tasks?status=foobar");
     cy.location("search").should("eq", "");
     cy.findByPlaceholderText("Filter by status").should("have.value", "");
   });
 });
 
-describe("scenarios > admin > troubleshooting > tasks", () => {
+describe("scenarios > admin > tools > tasks", () => {
   const task = createMockTask({
     task_details: {
       useful: {
@@ -303,15 +281,12 @@ describe("scenarios > admin > troubleshooting > tasks", () => {
   });
 
   it("shows task modal", () => {
-    cy.visit("/admin/troubleshooting/tasks");
+    cy.visit("/admin/tools/tasks");
     cy.wait("@getTasks");
 
-    cy.findByRole("link", { name: "View" }).click();
+    cy.findByTestId("tasks-table").findByText("A task").click();
     cy.wait("@getTask");
-    cy.location("pathname").should(
-      "eq",
-      `/admin/troubleshooting/tasks/${task.id}`,
-    );
+    cy.location("pathname").should("eq", `/admin/tools/tasks/${task.id}`);
 
     cy.log("task details");
     H.modal()
@@ -347,7 +322,7 @@ describe("scenarios > admin > troubleshooting > tasks", () => {
   });
 });
 
-describe("scenarios > admin > troubleshooting > logs", () => {
+describe("scenarios > admin > tools > logs", () => {
   const log1 = {
     timestamp: "2024-01-10T21:21:58.597Z",
     level: "DEBUG",
@@ -370,7 +345,7 @@ describe("scenarios > admin > troubleshooting > logs", () => {
     H.restore();
     cy.signInAsAdmin();
 
-    cy.visit("/admin/troubleshooting/logs");
+    cy.visit("/admin/tools/logs");
     cy.wait("@getLogs");
   });
 
@@ -403,14 +378,7 @@ describe("scenarios > admin > troubleshooting > logs", () => {
   }
 });
 
-// Quarantine the whole spec because it is most likely causing the H2 timeouts and the chained failures!
-// NOTE: it will be quarantined on PRs, but will still run on `master`!
-
-// UDATE:
-// We need to skip this completely! CI on `master` is almost constantly red.
-// TODO:
-// Once the underlying problem with H2 is solved, replace `describe.skip` with `describePremium`.
-describe("admin > tools > erroring questions ", { tags: "@quarantine" }, () => {
+describe("admin > tools > erroring questions ", () => {
   const TOOLS_ERRORS_URL = "/admin/tools/errors";
   // The filter is required but doesn't have a default value set
   const brokenQuestionDetails = {
@@ -431,8 +399,8 @@ describe("admin > tools > erroring questions ", { tags: "@quarantine" }, () => {
   };
 
   function fixQuestion(name) {
-    cy.visit("/collection/root");
-    cy.findByText(name).click();
+    cy.findByTestId("visualization-root").findByText(name).click();
+
     cy.findByText("Open Editor").click();
 
     cy.icon("variable").click();
@@ -453,33 +421,28 @@ describe("admin > tools > erroring questions ", { tags: "@quarantine" }, () => {
       });
   }
 
-  describe.skip("when feature enabled", () => {
+  describe("when feature enabled", () => {
     beforeEach(() => {
       H.restore();
       cy.signInAsAdmin();
-      H.setTokenFeatures("all");
+      H.activateToken("pro-self-hosted");
 
       cy.intercept("POST", "/api/dataset").as("dataset");
     });
 
     describe("without broken questions", () => {
-      it.skip('should render the "Tools" tab and navigate to the "Erroring Questions" by clicking on it', () => {
+      it('should render the "Tools" tab and navigate to the "Erroring Questions" by clicking on it', () => {
         // The sidebar has been taken out, because it looks awkward when there's only one elem on it: put it back in when there's more than one
         cy.visit("/admin");
 
         cy.get("nav").contains("Tools").click();
 
+        cy.findByRole("link", { name: /Erroring questions/ }).click();
         cy.location("pathname").should("eq", TOOLS_ERRORS_URL);
-        cy.findByRole("link", { name: "Erroring Questions" })
-          .should("have.attr", "href")
-          .and("eq", TOOLS_ERRORS_URL);
-      });
 
-      it("should disable search input fields (metabase#18050)", () => {
-        cy.visit(TOOLS_ERRORS_URL);
+        cy.log("test no results state");
 
-        // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-        cy.findByText("No results");
+        cy.findByTestId("visualization-root").findByText("No results");
         cy.button("Rerun Selected").should("be.disabled");
         cy.findByPlaceholderText("Error contents").should("be.disabled");
         cy.findByPlaceholderText("DB name").should("be.disabled");
@@ -506,8 +469,9 @@ describe("admin > tools > erroring questions ", { tags: "@quarantine" }, () => {
         cy.wait("@dataset");
 
         // The question is still there because we didn't fix it
-        // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-        cy.findByText(brokenQuestionDetails.name);
+        cy.findByTestId("visualization-root").findByText(
+          brokenQuestionDetails.name,
+        );
         cy.button("Rerun Selected").should("be.disabled");
 
         cy.findByPlaceholderText("Error contents").should("not.be.disabled");
@@ -518,11 +482,10 @@ describe("admin > tools > erroring questions ", { tags: "@quarantine" }, () => {
 
         cy.wait("@dataset");
 
-        // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-        cy.findByText("No results");
-      });
+        cy.findByTestId("visualization-root").findByText("No results");
 
-      it("should remove fixed question on a rerun", () => {
+        cy.findByPlaceholderText("Collection name").clear();
+
         fixQuestion(brokenQuestionDetails.name);
 
         cy.visit(TOOLS_ERRORS_URL);
@@ -533,8 +496,7 @@ describe("admin > tools > erroring questions ", { tags: "@quarantine" }, () => {
 
         cy.wait("@dataset");
 
-        // eslint-disable-next-line no-unscoped-text-selectors -- deprecated usage
-        cy.findByText("No results");
+        cy.findByTestId("visualization-root").findByText("No results");
       });
     });
   });
@@ -544,7 +506,7 @@ describe("admin > tools", () => {
   beforeEach(() => {
     H.restore();
     cy.signInAsAdmin();
-    H.setTokenFeatures("all");
+    H.activateToken("pro-self-hosted");
   });
 
   it("should show either the erroring questions or the upsell (based on the `audit_app` feature flag)", () => {
@@ -552,35 +514,28 @@ describe("admin > tools", () => {
       "Enable model persistence in order to have multiple tabs/routes in tools",
     );
     cy.request("POST", "/api/persist/enable");
+    cy.visit("/admin/tools/errors");
 
-    cy.log(
-      "Visiting tools should redirect to the erroring questions as the index route",
-    );
-    cy.visit("/admin/tools");
-
-    cy.location("pathname").should("eq", "/admin/tools/errors");
     cy.findByRole("heading", {
       name: "Questions that errored when last run",
     }).should("be.visible");
 
     cy.log("We should be able to switch to the model caching page");
-    cy.findByLabelText("Model Caching Log").should("not.be.checked");
-    cy.findByRole("radiogroup").contains("Model Caching Log").click();
+
+    cy.findByTestId("admin-layout-sidebar")
+      .findByText("Model cache log")
+      .click();
     cy.location("pathname").should("eq", "/admin/tools/model-caching");
 
     cy.log(
       "Once the audit_app feature flag is gone, tools should display an upsell",
     );
     H.deleteToken();
-    cy.visit("/admin/tools");
+    cy.visit("/admin/tools/errors");
 
-    cy.log("Redirects to the erroring questions again");
     cy.findByRole("heading", {
       name: "Troubleshoot faster",
     }).should("be.visible");
-    cy.findByRole("link", { name: "Try for free" })
-      .should("have.attr", "href")
-      .and("include", "https://www.metabase.com/upgrade")
-      .and("include", "utm_");
+    cy.findByRole("button", { name: "Try for free" });
   });
 });

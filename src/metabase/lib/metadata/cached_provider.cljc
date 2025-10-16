@@ -6,7 +6,8 @@
    [metabase.lib.schema.metadata :as lib.schema.metadata]
    [metabase.util :as u]
    [metabase.util.log :as log]
-   [metabase.util.malli :as mu]))
+   [metabase.util.malli :as mu]
+   [metabase.util.performance :as perf]))
 
 #?(:clj (set! *warn-on-reflection* true))
 
@@ -34,7 +35,7 @@
                      [:metadata/metric        ::lib.schema.metadata/metric]
                      [:metadata/segment       ::lib.schema.metadata/segment]]]
   (let [metadata (-> metadata
-                     (update-keys u/->kebab-case-en)
+                     (perf/update-keys u/->kebab-case-en)
                      (assoc :lib/type metadata-type))]
     (store-in-cache! cache [metadata-type id] metadata))
   true)
@@ -44,6 +45,13 @@
     (when-not (= cached-value ::nil)
       cached-value)
     (store-in-cache! cache ks (fetch-thunk))))
+
+(defn- cached-value [cache k not-found]
+  (get @cache [::cached-value k] not-found))
+
+(defn- cache-value! [cache k v]
+  (swap! cache assoc [::cached-value k] v)
+  nil)
 
 (defn- database [cache metadata-provider]
   (get-in-cache-or-fetch cache [:metadata/database] #(lib.metadata.protocols/database metadata-provider)))
@@ -132,6 +140,12 @@
     (cached-metadatas cache metadata-type metadata-ids))
   (store-metadata! [_this a-metadata]
     (store-metadata! cache (:lib/type a-metadata) (:id a-metadata) a-metadata))
+  (cached-value [_this k not-found]
+    (cached-value cache k not-found))
+  (cache-value! [_this k v]
+    (cache-value! cache k v))
+  (has-cache? [_this]
+    true)
 
   #?(:clj Object :cljs IEquiv)
   (#?(:clj equals :cljs -equiv) [_this another]
@@ -147,4 +161,5 @@
 (defn cached-metadata-provider
   "Wrap `metadata-provider` with an implementation that automatically caches results."
   ^CachedProxyMetadataProvider [metadata-provider]
+  (log/debugf "Wrapping %s in CachedProxyMetadataProvider" (pr-str metadata-provider))
   (->CachedProxyMetadataProvider (atom {}) metadata-provider))

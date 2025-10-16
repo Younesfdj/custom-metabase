@@ -5,15 +5,16 @@
   database types."
   (:require
    [clojure.java.jdbc :as jdbc]
+   [clojure.string :as str]
    [honey.sql :as sql]
    [metabase.app-db.core :as mdb]
    [metabase.app-db.setup :as mdb.setup]
    [metabase.classloader.core :as classloader]
    [metabase.config.core :as config]
    [metabase.models.init]
+   [metabase.models.resolution :as models.resolution]
    [metabase.util :as u]
    [metabase.util.i18n :refer [trs]]
-   [metabase.util.jvm :as u.jvm]
    [metabase.util.log :as log]
    [metabase.util.malli :as mu]
    [metabase.util.malli.schema :as ms]
@@ -49,8 +50,9 @@
   `(do-step ~msg (fn [] ~@body)))
 
 (def entities
-  "Entities in the order they should be serialized/deserialized. This is done so we make sure that we load
-  instances of entities before others that might depend on them, e.g. `Databases` before `Tables` before `Fields`."
+  "Entities in the order they should be serialized/deserialized in `load-from-h2`. This is done so we make sure that
+   we load instances of entities before others that might depend on them, e.g. `Databases` before `Tables` before
+   `Fields`."
   (concat
    [:model/Channel
     :model/ChannelTemplate
@@ -60,6 +62,7 @@
     :model/Table
     :model/Field
     :model/FieldValues
+    :model/FieldUserSettings
     :model/Segment
     :model/ModerationReview
     :model/Revision
@@ -114,7 +117,8 @@
      [:model/GroupTableAccessPolicy
       :model/ConnectionImpersonation
       :model/Metabot
-      :model/MetabotEntity
+      :model/MetabotConversation
+      :model/MetabotMessage
       :model/MetabotPrompt])))
 
 (defn- objects->colums+values
@@ -135,7 +139,7 @@
 (def ^:private chunk-size 100)
 
 (defn- insert-chunk!
-  "Insert of `chunkk` of rows into the target database table with `table-name`."
+  "Insert of `chunk` of rows into the target database table with `table-name`."
   [target-db-type target-db-conn-spec table-name chunkk]
   (log/debugf "Inserting chunk of %d rows" (count chunkk))
   (try
@@ -345,7 +349,9 @@
     :model/Session
     :model/ImplicitAction
     :model/HTTPAction
+    :model/FieldUserSettings
     :model/QueryAction
+    :model/MetabotConversation
     :model/ModelIndexValue})
 
 (defmulti ^:private postgres-id-sequence-name
@@ -405,10 +411,10 @@
    source-data-source :- (ms/InstanceOfClass javax.sql.DataSource)
    target-db-type     :- [:enum :h2 :postgres :mysql]
    target-data-source :- (ms/InstanceOfClass javax.sql.DataSource)]
-  ;; make sure the entire system is loaded before running this test, to make sure we account for all the models.
-  ;;
-  ;; TODO -- THIS IS NOT A TEST!! WHAT ARE THESE COMMENTS TALKING ABOUT!
-  (doseq [ns-symb #_{:clj-kondo/ignore [:deprecated-var]} u.jvm/metabase-namespace-symbols]
+  ;; make sure all model namespaces are loaded
+  (doseq [ns-symb (cond->> (vals models.resolution/model->namespace)
+                    (not config/ee-available?)
+                    (remove #(str/starts-with? (str %) "metabase-enterprise")))]
     (classloader/require ns-symb))
   ;; make sure the source database is up-do-date
   (step (trs "Set up {0} source database and run migrations..." (name source-db-type))

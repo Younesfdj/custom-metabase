@@ -1,7 +1,7 @@
 import cx from "classnames";
 import type { ResizableBoxProps } from "react-resizable";
 
-import DebouncedFrame from "metabase/components/DebouncedFrame";
+import DebouncedFrame from "metabase/common/components/DebouncedFrame";
 import CS from "metabase/css/core/index.css";
 import type {
   SelectionRange,
@@ -129,6 +129,7 @@ export const ViewMainContainer = (props: ViewMainContainerProps) => {
         <SyncedParametersList
           className={ViewMainContainerS.StyledSyncedParametersList}
           parameters={parameters}
+          dashboardId={question.getDashboardProps().dashboardId}
           setParameterValue={setParameterValue}
           commitImmediately
         />
@@ -137,6 +138,7 @@ export const ViewMainContainer = (props: ViewMainContainerProps) => {
       <DebouncedFrame
         className={ViewMainContainerS.StyledDebouncedFrame}
         enabled={!isLiveResizable}
+        resetKey={props.isRunning}
       >
         <QueryVisualization
           {...props}

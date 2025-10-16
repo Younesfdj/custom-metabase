@@ -123,6 +123,8 @@ import dyno_component from "./dyno.svg?component";
 import dyno_source from "./dyno.svg?source";
 import edit_document_component from "./edit_document.svg?component";
 import edit_document_source from "./edit_document.svg?source";
+import edit_document_outlined_component from "./edit_document_outlined.svg?component";
+import edit_document_outlined_source from "./edit_document_outlined.svg?source";
 import ellipsis_component from "./ellipsis.svg?component";
 import ellipsis_source from "./ellipsis.svg?source";
 import embed_component from "./embed.svg?component";
@@ -169,6 +171,8 @@ import gauge_component from "./gauge.svg?component";
 import gauge_source from "./gauge.svg?source";
 import gear_component from "./gear.svg?component";
 import gear_source from "./gear.svg?source";
+import gear_settings_filled_component from "./gear_settings_filled.svg?component";
+import gear_settings_filled_source from "./gear_settings_filled.svg?source";
 import gem_component from "./gem.svg?component";
 import gem_source from "./gem.svg?source";
 import globe_component from "./globe.svg?component";
@@ -329,6 +333,8 @@ import ruler_component from "./ruler.svg?component";
 import ruler_source from "./ruler.svg?source";
 import sankey_component from "./sankey.svg?component";
 import sankey_source from "./sankey.svg?source";
+import schema_component from "./schema.svg?component";
+import schema_source from "./schema.svg?source";
 import search_component from "./search.svg?component";
 import search_source from "./search.svg?source";
 import section_component from "./section.svg?component";
@@ -349,6 +355,8 @@ import slack_colorized_component from "./slack_colorized.svg?component";
 import slack_colorized_source from "./slack_colorized.svg?source";
 import smartscalar_component from "./smartscalar.svg?component";
 import smartscalar_source from "./smartscalar.svg?source";
+import snail_component from "./snail.svg?component";
+import snail_source from "./snail.svg?source";
 import snippet_component from "./snippet.svg?component";
 import snippet_source from "./snippet.svg?source";
 import sort_component from "./sort.svg?component";
@@ -391,6 +399,10 @@ import table_component from "./table.svg?component";
 import table_source from "./table.svg?source";
 import table2_component from "./table2.svg?component";
 import table2_source from "./table2.svg?source";
+import thumbs_down_component from "./thumbs_down.svg?component";
+import thumbs_down_source from "./thumbs_down.svg?source";
+import thumbs_up_component from "./thumbs_up.svg?component";
+import thumbs_up_source from "./thumbs_up.svg?source";
 import time_history_component from "./time_history.svg?component";
 import time_history_source from "./time_history.svg?source";
 import trash_component from "./trash.svg?component";
@@ -425,6 +437,8 @@ import warning_component from "./warning.svg?component";
 import warning_source from "./warning.svg?source";
 import warning_round_filled_component from "./warning_round_filled.svg?component";
 import warning_round_filled_source from "./warning_round_filled.svg?source";
+import warning_triangle_filled_component from "./warning_triangle_filled.svg?component";
+import warning_triangle_filled_source from "./warning_triangle_filled.svg?source";
 import waterfall_component from "./waterfall.svg?component";
 import waterfall_source from "./waterfall.svg?source";
 import webhook_component from "./webhook.svg?component";
@@ -672,6 +686,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: edit_document_component,
       source: edit_document_source,
     },
+    edit_document_outlined: {
+      component: edit_document_outlined_component,
+      source: edit_document_outlined_source,
+    },
     ellipsis: {
       component: ellipsis_component,
       source: ellipsis_source,
@@ -767,6 +785,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     gear: {
       component: gear_component,
       source: gear_source,
+    },
+    gear_settings_filled: {
+      component: gear_settings_filled_component,
+      source: gear_settings_filled_source,
     },
     gem: {
       component: gem_component,
@@ -1048,6 +1070,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: revert_component,
       source: revert_source,
     },
+    schema: {
+      component: schema_component,
+      source: schema_source,
+    },
     sankey: {
       component: sankey_component,
       source: sankey_source,
@@ -1160,6 +1186,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       component: smartscalar_component,
       source: smartscalar_source,
     },
+    snail: {
+      component: snail_component,
+      source: snail_source,
+    },
     snippet: {
       component: snippet_component,
       source: snippet_source,
@@ -1209,6 +1239,14 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
       // for questions with table visualizations
       component: table2_component,
       source: table2_source,
+    },
+    thumbs_down: {
+      component: thumbs_down_component,
+      source: thumbs_down_source,
+    },
+    thumbs_up: {
+      component: thumbs_up_component,
+      source: thumbs_up_source,
     },
     time_history: {
       component: time_history_component,
@@ -1281,6 +1319,10 @@ export const Icons: Record<IconName, { component: React.VFC; source: string }> =
     warning_round_filled: {
       component: warning_round_filled_component,
       source: warning_round_filled_source,
+    },
+    warning_triangle_filled: {
+      component: warning_triangle_filled_component,
+      source: warning_triangle_filled_source,
     },
     waterfall: {
       component: waterfall_component,
@@ -1384,6 +1426,7 @@ export type IconName =
   | "download"
   | "dyno"
   | "edit_document"
+  | "edit_document_outlined"
   | "ellipsis"
   | "embed"
   | "empty"
@@ -1408,6 +1451,7 @@ export type IconName =
   | "folder_filled"
   | "gauge"
   | "gear"
+  | "gear_settings_filled"
   | "gem"
   | "globe"
   | "grabber"
@@ -1497,6 +1541,7 @@ export type IconName =
   | "refresh_downstream"
   | "rocket"
   | "ruler"
+  | "schema"
   | "search"
   | "section"
   | "segment"
@@ -1506,6 +1551,7 @@ export type IconName =
   | "slack"
   | "slack_colorized"
   | "smartscalar"
+  | "snail"
   | "snippet"
   | "sparkles"
   | "star_filled"
@@ -1518,6 +1564,8 @@ export type IconName =
   | "tab"
   | "table"
   | "table2"
+  | "thumbs_down"
+  | "thumbs_up"
   | "time_history"
   | "trash"
   | "trash_filled"
@@ -1536,6 +1584,7 @@ export type IconName =
   | "view_archive"
   | "warning"
   | "warning_round_filled"
+  | "warning_triangle_filled"
   | "waterfall"
   | "webhook"
   | "10k"

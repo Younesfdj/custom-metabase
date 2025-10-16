@@ -3,16 +3,20 @@
    [clojure.string :as str]
    [clojure.test :refer :all]
    [java-time.api :as t]
+   [medley.core :as m]
    [metabase.driver :as driver]
    [metabase.driver.mongo.query-processor :as mongo.qp]
    [metabase.lib.core :as lib]
    [metabase.lib.metadata :as lib.metadata]
+   [metabase.lib.test-util :as lib.tu]
    [metabase.query-processor :as qp]
    [metabase.query-processor-test.alternative-date-test :as qp.alternative-date-test]
    [metabase.query-processor-test.date-time-zone-functions-test :as qp.datetime-test]
    [metabase.query-processor.compile :as qp.compile]
+   [metabase.query-processor.pivot :as qp.pivot]
    [metabase.query-processor.timezone :as qp.timezone]
-   [metabase.test :as mt]))
+   [metabase.test :as mt]
+   [metabase.util.json :as json]))
 
 (set! *warn-on-reflection* true)
 
@@ -614,21 +618,61 @@
            (qp/process-query
             (mt/mbql-query times {:fields [$t]})))))))
 
+(deftest ^:parallel join-preserves-$$-variable-prefix-test
+  (mt/test-driver :mongo
+    (testing "$$variable references in join conditions are preserved when rhs is a literal value (QUE-1500)"
+      (let [query (mt/mbql-query users
+                    {:joins    [{:condition    [:and
+                                                [:= $id &c.checkins.user_id]
+                                                [:= $name [:value "Felipinho Asklepios" {:base_type :type/Text}]]]
+                                 :source-table $$checkins
+                                 :alias        "c"
+                                 :fields       [&c.checkins.date]}]
+                     :fields   [$id $name &c.checkins.date]
+                     :order-by [[:asc $id]
+                                [:asc &c.checkins.id]]
+                     :limit    3})]
+        (testing "qp.compile"
+          (is (= [{"$lookup"
+                   {:as "join_alias_c"
+                    :from "checkins"
+                    :let {"let__id___1" "$_id",
+                          "let_name___2" "$name"}
+                    :pipeline
+                    [{"$project" {"_id" "$_id", "date" "$date", "user_id" "$user_id", "venue_id" "$venue_id"}}
+                     {"$match"
+                      {"$and" [{"$expr" {"$eq" ["$$let__id___1" "$user_id"]}}
+                               {"$expr" {"$eq" ["$$let_name___2" "Felipinho Asklepios"]}}]}}]}}
+                  {"$unwind" {:path "$join_alias_c"
+                              :preserveNullAndEmptyArrays true}}
+                  {"$sort" {"_id" 1
+                            "join_alias_c._id" 1}}
+                  {"$project" {"_id" "$_id"
+                               "c__date" "$join_alias_c.date"
+                               "name" "$name"}}
+                  {"$limit" 3}]
+                 (:query (qp.compile/compile query)))))
+        (testing "qp.process-query"
+          (is (= [[1 "Plato Yeshua" nil]
+                  [2 "Felipinho Asklepios" "2013-11-19T00:00:00Z"]
+                  [2 "Felipinho Asklepios" "2015-03-06T00:00:00Z"]]
+                 (mt/rows (qp/process-query query)))))))))
+
 (deftest ^:parallel mongo-multiple-joins-test
   (testing "should be able to join multiple mongo collections"
     (mt/test-driver :mongo
       (mt/dataset (mt/dataset-definition "multi-join-db"
-                                         ["table_a"
-                                          [{:field-name "a_id" :base-type :type/Text}
-                                           {:field-name "b_id" :base-type :type/Text}]
-                                          [["a_id" "b_id"]]]
-                                         ["table_b"
-                                          [{:field-name "b_id" :base-type :type/Text}
-                                           {:field-name "c_id" :base-type :type/Text}]
-                                          [["b_id" "c_id"]]]
-                                         ["table_c"
-                                          [{:field-name "c_id" :base-type :type/Text}]
-                                          [["c_id"]]])
+                                         [["table_a"
+                                           [{:field-name "a_id" :base-type :type/Text}
+                                            {:field-name "b_id" :base-type :type/Text}]
+                                           [["a_id" "b_id"]]]
+                                          ["table_b"
+                                           [{:field-name "b_id" :base-type :type/Text}
+                                            {:field-name "c_id" :base-type :type/Text}]
+                                           [["b_id" "c_id"]]]
+                                          ["table_c"
+                                           [{:field-name "c_id" :base-type :type/Text}]
+                                           [["c_id"]]]])
         (let [mp (mt/metadata-provider)
               table-a (lib.metadata/table mp (mt/id :table_a))
               table-b (lib.metadata/table mp (mt/id :table_b))
@@ -673,3 +717,57 @@
                                   (-> (lib/query mp dogs)
                                       (lib/filter (lib/contains person-id "e"))
                                       qp/process-query))))))))
+
+(deftest ^:parallel pivot-query-based-on-native-card-test
+  (mt/test-driver :mongo
+    (testing "Pivot queries based on a native Mongo card return the right number of columns (#64124)"
+      (let [native-query (json/encode [{:$match {:_id 1}}
+                                       {:$project {:product_id :$product_id, :subtotal :$subtotal}}])
+            mp (lib.tu/mock-metadata-provider
+                (mt/metadata-provider)
+                {:cards [{:id              1
+                          :name            "Orders native mongo"
+                          :dataset-query   {:type     :native
+                                            :native   {:collection "orders"
+                                                       :query      native-query}
+                                            :database (mt/id)}
+                          :result_metadata [{:name         "product_id"
+                                             :base_type    :type/Integer
+                                             :display_name "product_id"}
+                                            {:name         "subtotal"
+                                             :base_type    :type/Float
+                                             :display_name "subtotal"}]}]})
+            breakout-by-column-name (fn [query col-name]
+                                      (lib/breakout query (m/find-first (comp #{col-name} :name)
+                                                                        (lib/breakoutable-columns query))))
+            query (-> (lib/query mp (lib.metadata/card mp 1))
+                      (lib/aggregate (lib/count))
+                      (breakout-by-column-name "product_id")
+                      (breakout-by-column-name "subtotal"))
+            pivot-query (assoc query
+                               :pivot_rows         [0]
+                               :pivot_cols         [1]
+                               :show_row_totals    true
+                               :show_column_totals true
+                               :info               {:context :ad-hoc})]
+        (is (=? {:data
+                 {:cols
+                  [{:lib/desired-column-alias "product_id"
+                    :field_ref                [:field "product_id" {:base-type :type/Integer}]
+                    :base_type                :type/Integer
+                    :effective_type           :type/Integer}
+                   {:lib/desired-column-alias "subtotal"
+                    :field_ref                [:field "subtotal" {:base-type :type/Float}]
+                    :base_type                :type/Float
+                    :effective_type           :type/Float}
+                   {:lib/desired-column-alias "pivot-grouping"
+                    :field_ref                [:expression "pivot-grouping"]
+                    :base_type                :type/Integer
+                    :effective_type           :type/Integer}
+                   {:lib/desired-column-alias "count"
+                    :field_ref                [:aggregation 0]
+                    :base_type                :type/Integer
+                    :semantic_type            :type/Quantity
+                    :effective_type           :type/Integer}]
+                  :rows [[14 37.65 0 1] [nil 37.65 1 1] [14 nil 2 1] [nil nil 3 1]]}}
+                (qp.pivot/run-pivot-query pivot-query)))))))

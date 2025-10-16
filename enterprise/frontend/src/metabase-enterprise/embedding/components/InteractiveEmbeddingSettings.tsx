@@ -1,14 +1,15 @@
 import { t } from "ttag";
 
-import { EmbeddingToggle } from "metabase/admin/settings/components/EmbeddingSettings/EmbeddingToggle";
-import { SettingHeader } from "metabase/admin/settings/components/SettingHeader";
 import {
   SettingsPageWrapper,
   SettingsSection,
-} from "metabase/admin/settings/components/SettingsSection";
+} from "metabase/admin/components/SettingsSection";
+import { EmbeddingToggle } from "metabase/admin/settings/components/EmbeddingSettings/EmbeddingToggle";
+import { SettingHeader } from "metabase/admin/settings/components/SettingHeader";
 import { AdminSettingInput } from "metabase/admin/settings/components/widgets/AdminSettingInput";
+import { UpsellDevInstances } from "metabase/admin/upsells";
+import ExternalLink from "metabase/common/components/ExternalLink";
 import { useDocsUrl } from "metabase/common/hooks";
-import ExternalLink from "metabase/core/components/ExternalLink";
 import { Box, Button } from "metabase/ui";
 
 import { EmbeddingAppOriginDescription } from "./EmbeddingAppOriginDescription";
@@ -58,6 +59,7 @@ export function InteractiveEmbeddingSettings() {
 
         <SameSiteSelectWidget />
       </SettingsSection>
+      <UpsellDevInstances location="embedding-page" />
     </SettingsPageWrapper>
   );
 }

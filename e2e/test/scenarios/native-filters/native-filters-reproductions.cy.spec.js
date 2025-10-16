@@ -1,5 +1,9 @@
 const { H } = cy;
-import { SAMPLE_DB_ID, USER_GROUPS } from "e2e/support/cypress_data";
+import {
+  SAMPLE_DB_ID,
+  USER_GROUPS,
+  WRITABLE_DB_ID,
+} from "e2e/support/cypress_data";
 import { SAMPLE_DATABASE } from "e2e/support/cypress_sample_database";
 
 import * as FieldFilter from "./helpers/e2e-field-filter-helpers";
@@ -23,24 +27,28 @@ describe("issue 9357", () => {
     cy.signInAsAdmin();
   });
 
-  it("should reorder template tags by drag and drop (metabase#9357)", () => {
-    H.startNewNativeQuestion();
-    SQLFilter.enterParameterizedQuery(
-      "{{firstparameter}} {{nextparameter}} {{lastparameter}}",
-    );
+  it(
+    "should reorder template tags by drag and drop (metabase#9357)",
+    { viewportWidth: 800, viewportHeight: 600 },
+    () => {
+      H.startNewNativeQuestion();
+      SQLFilter.enterParameterizedQuery(
+        "{{firstparameter}} {{nextparameter}} {{lastparameter}}",
+      );
 
-    // Drag the firstparameter to last position
-    H.moveDnDKitElement(cy.get("fieldset").findAllByRole("listitem").first(), {
-      horizontal: 430,
-    });
+      // Drag the firstparameter to last position
+      H.moveDnDKitElement(H.filterWidget().findAllByRole("listitem").first(), {
+        vertical: 50,
+      });
 
-    // Ensure they're in the right order
-    cy.findAllByText("Variable name").parent().as("variableField");
+      // Ensure they're in the right order
+      cy.findAllByText("Variable name").parent().as("variableField");
 
-    cy.get("@variableField").first().findByText("nextparameter");
+      cy.get("@variableField").first().findByText("nextparameter");
 
-    cy.get("@variableField").eq(1).findByText("firstparameter");
-  });
+      cy.get("@variableField").eq(1).findByText("firstparameter");
+    },
+  );
 });
 
 describe("issue 11480", () => {
@@ -274,7 +282,7 @@ describe.skip("issue 13961", () => {
     cy.location("search").should("eq", "?category=Doohickey");
 
     // Remove default filter (category)
-    cy.get("fieldset .Icon-close").click();
+    H.filterWidget().findByRole("button").click();
 
     cy.icon("play").first().should("be.visible").as("rerunQuestion").click();
     cy.wait("@cardQuery");
@@ -967,8 +975,7 @@ describe("issue 29786", { tags: "@external" }, () => {
       query: SQL_QUERY,
     });
 
-    // type a space to trigger fields
-    H.NativeEditor.type(" ");
+    cy.findByTestId("native-query-top-bar").icon("variable").click();
 
     cy.findByTestId("tag-editor-variable-f1")
       .findByTestId("variable-type-select")
@@ -1248,5 +1255,32 @@ describe("issue 49577", () => {
       cy.findByText("bar").should("be.visible");
       cy.findByText("baz").should("be.visible");
     });
+  });
+});
+
+describe("issue 63537", () => {
+  beforeEach(() => {
+    H.restore("postgres-writable");
+    H.resetTestTable({ type: "postgres", table: "many_data_types" });
+    cy.signInAsAdmin();
+    H.resyncDatabase({ dbId: WRITABLE_DB_ID, tableName: "many_data_types" });
+  });
+
+  it("should allow to use postgres enums in field filters (metabase#63537)", () => {
+    H.startNewNativeQuestion({ database: WRITABLE_DB_ID });
+    H.NativeEditor.type("SELECT * FROM many_data_types WHERE {{f}}");
+    SQLFilter.openTypePickerFromDefaultFilterType();
+    SQLFilter.chooseType("Field Filter");
+    FieldFilter.mapTo({
+      table: "Many Data Types",
+      field: "Enum",
+    });
+    H.filterWidget().click();
+    H.popover().within(() => {
+      cy.findByText("beta").click();
+      cy.button("Add filter").click();
+    });
+    H.runNativeQuery();
+    H.assertQueryBuilderRowCount(2);
   });
 });

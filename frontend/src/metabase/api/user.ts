@@ -51,7 +51,8 @@ export const userApi = Api.injectEndpoints({
         url: "/api/user",
         body,
       }),
-      invalidatesTags: (_, error) => invalidateTags(error, [listTag("user")]),
+      invalidatesTags: (_, error) =>
+        invalidateTags(error, [listTag("user"), listTag("permissions-group")]),
       onQueryStarted: async (request, { dispatch, queryFulfilled }) => {
         if (request.password) {
           const { data: user } = await queryFulfilled;
@@ -116,6 +117,10 @@ export const userApi = Api.injectEndpoints({
     }),
   }),
 });
+
+/** To minimize requests, useListUsersQuery should be invoked where possible
+ * with this limit and an offset of 0 */
+export const STANDARD_USER_LIST_PAGE_SIZE = 27;
 
 export const {
   useListUsersQuery,

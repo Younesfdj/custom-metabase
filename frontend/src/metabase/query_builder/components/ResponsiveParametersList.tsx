@@ -2,17 +2,17 @@ import cx from "classnames";
 import { useCallback, useMemo, useState } from "react";
 import { msgid, ngettext, t } from "ttag";
 
-import Button from "metabase/core/components/Button";
-import useIsSmallScreen from "metabase/hooks/use-is-small-screen";
+import Button from "metabase/common/components/Button";
+import useIsSmallScreen from "metabase/common/hooks/use-is-small-screen";
 import { Box, Flex } from "metabase/ui";
-import type Question from "metabase-lib/v1/Question";
-import type { Parameter } from "metabase-types/api";
+import type { CardId, DashboardId, Parameter } from "metabase-types/api";
 
 import ResponsiveParametersListS from "./ResponsiveParametersList.module.css";
 import { SyncedParametersList } from "./SyncedParametersList";
 
 interface ResponsiveParametersListProps {
-  question: Question;
+  cardId?: CardId;
+  dashboardId?: DashboardId;
   parameters: Parameter[];
   setParameterValue: (parameterId: string, value: string) => void;
   setParameterIndex: (parameterId: string, parameterIndex: number) => void;
@@ -20,7 +20,8 @@ interface ResponsiveParametersListProps {
 }
 
 export const ResponsiveParametersList = ({
-  question,
+  cardId,
+  dashboardId,
   parameters,
   setParameterValue,
   setParameterIndex,
@@ -38,8 +39,11 @@ export const ResponsiveParametersList = ({
   }, [parameters]);
 
   return (
-    <Box w={isSmallScreen && mobileShowParameterList ? "100%" : undefined}>
-      {isSmallScreen && (
+    <Box
+      w={isSmallScreen && mobileShowParameterList ? "100%" : undefined}
+      style={{ alignSelf: "center" }}
+    >
+      {parameters.length > 0 && isSmallScreen && (
         <Button
           className={ResponsiveParametersListS.filterButton}
           borderless
@@ -57,12 +61,13 @@ export const ResponsiveParametersList = ({
         </Button>
       )}
       <Box
+        py="sm"
         className={cx(ResponsiveParametersListS.ParametersListContainer, {
           [ResponsiveParametersListS.isSmallScreen]: isSmallScreen,
           [ResponsiveParametersListS.isShowingMobile]: mobileShowParameterList,
         })}
       >
-        {isSmallScreen && (
+        {parameters.length > 0 && isSmallScreen && (
           <Flex p="0.75rem 1rem" align="center" justify="space-between">
             <h3>{t`Filters`}</h3>
             <Button
@@ -75,7 +80,8 @@ export const ResponsiveParametersList = ({
         )}
         <SyncedParametersList
           className={ResponsiveParametersListS.StyledParametersList}
-          question={question}
+          cardId={cardId}
+          dashboardId={dashboardId}
           parameters={parameters}
           setParameterValue={setParameterValue}
           setParameterIndex={setParameterIndex}

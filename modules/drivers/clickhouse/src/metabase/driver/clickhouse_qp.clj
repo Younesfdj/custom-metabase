@@ -24,7 +24,6 @@
     OffsetTime
     ZonedDateTime]
    [java.util Arrays UUID]))
-
 ;; (set! *warn-on-reflection* true) ;; isn't enabled because of Arrays/toString call
 
 (defmethod sql.qp/quote-style :clickhouse [_] :mysql)
@@ -359,13 +358,22 @@
   (let [[qual valuevalue fieldinfo] value
         hsql-field (sql.qp/->honeysql driver field)
         hsql-value (sql.qp/->honeysql driver value)]
-    (if (and (isa? qual :value)
-             (isa? (:base_type fieldinfo) :type/Text)
-             (nil? valuevalue))
+    (cond
+      (and (isa? qual :value)
+           (isa? (:base_type fieldinfo) :type/Text)
+           (nil? valuevalue))
       [:or
        [:= hsql-field hsql-value]
        [:= [:'empty hsql-field] 1]]
-      ((get-method sql.qp/->honeysql [:sql :=]) driver [op field value]))))
+
+      ;; UUID fields can be compared directly with strings in ClickHouse.
+      (and (isa? qual :value)
+           (isa? (:base_type fieldinfo) :type/UUID)
+           (isa? (:base-type (nth field 2)) :type/UUID)
+           (string? valuevalue))
+      [:= hsql-field hsql-value]
+
+      :else ((get-method sql.qp/->honeysql [:sql :=]) driver [op field value]))))
 
 (defmethod sql.qp/->honeysql [:clickhouse :!=]
   [driver [op field value]]
@@ -457,6 +465,10 @@
 (defmethod sql.qp/cast-temporal-byte [:clickhouse :Coercion/ISO8601->Time]
   [_driver _special_type expr]
   expr)
+
+(defmethod sql.qp/cast-temporal-string [:clickhouse :Coercion/YYYYMMDDHHMMSSString->Temporal]
+  [_driver _coercion-strategy expr]
+  [:'parseDateTime expr (h2x/literal "%Y%m%d%H%i%S")])
 
 ;;; ------------------------------------------------------------------------------------
 ;;; JDBC-related functions
@@ -602,3 +614,4 @@
 (defmethod sql.params.substitution/->replacement-snippet-info [:clickhouse UUID]
   [_driver this]
   {:replacement-snippet (format "CAST('%s' AS UUID)" (str this))})
+
